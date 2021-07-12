@@ -1,0 +1,12 @@
+{
+  "mysql": {
+    "host": "127.0.0.1",
+    "database": "ezpanel_daemon",
+    "user": "ezpanel_daemon",
+    "pass": "ezpanel_daemon"
+  },
+  "serverDirectory": "/home/minecraft/ezpanel/servers",
+  "javaPath": "/bin/java",
+  "defaultJar": "minecraft.jar",
+  "defaultMaximumMemory": 4096
+}
