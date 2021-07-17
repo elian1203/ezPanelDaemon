@@ -151,7 +151,7 @@ public class ServerInstance {
 
 	public double getMemoryUsage() {
 		if (!isRunning())
-			return -1;
+			return 0;
 
 		try {
 			byte[] bytes = Files.readAllBytes(Path.of("/proc/" + process.pid() + "/status"));
@@ -173,10 +173,10 @@ public class ServerInstance {
 				}
 			}
 
-			return -1;
+			return 0;
 		} catch (IOException e) {
 			e.printStackTrace();
-			return -1;
+			return 0;
 		}
 	}
 

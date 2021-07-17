@@ -193,6 +193,21 @@ public class DaemonWebServer {
 
 			httpExchange.close();
 		});
+		server.createContext("/servers/defaultSettings", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+			}
+
+			JsonObject defaultSettings = new JsonObject();
+			defaultSettings.addProperty("javaPath", config.getConfig().get("javaPath").getAsString());
+			defaultSettings.addProperty("defaultJar", config.getConfig().get("defaultJar").getAsString());
+			defaultSettings.addProperty("defaultMaximumMemory",
+					config.getConfig().get("defaultMaximumMemory").getAsInt());
+
+			String response = gson.toJson(defaultSettings);
+			responseAndClose(httpExchange, response);
+		});
 		server.createContext("/servers/create", httpExchange -> {
 			if (!authVerify(httpExchange)) {
 				httpExchange.sendResponseHeaders(401, 0);
@@ -204,15 +219,58 @@ public class DaemonWebServer {
 			try {
 				JsonObject json = JsonParser.parseString(input).getAsJsonObject();
 
+				String name = json.get("name").getAsString();
 				String javaPath = json.get("javaPath").getAsString();
 				String serverJar = json.get("serverJar").getAsString();
 				String jarPathRelativeTo = json.get("jarPathRelativeTo").getAsString();
 				int maximumMemory = json.get("maximumMemory").getAsInt();
 				boolean autoStart = json.get("autoStart").getAsBoolean();
+				int ownerId = json.has("ownerId") ? json.get("ownerId").getAsInt() : -1;
+
+				boolean success = database.createServer(name, javaPath, serverJar, jarPathRelativeTo, maximumMemory,
+						autoStart, ownerId);
+
+				if (success) {
+					httpExchange.sendResponseHeaders(200, 0);
+				} else {
+					httpExchange.sendResponseHeaders(500, 0);
+				}
+
+				httpExchange.close();
 			} catch (Exception e) {
 				httpExchange.sendResponseHeaders(400, 0);
 				httpExchange.close();
 			}
+		});
+		server.createContext("/servers/create/config", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+			}
+
+			JsonObject responseObject = new JsonObject();
+			responseObject.addProperty("javaPath", config.getConfig().get("javaPath").getAsString());
+			responseObject.addProperty("defaultJar", config.getConfig().get("defaultJar").getAsString());
+			responseObject.addProperty("defaultMaximumMemory",
+					config.getConfig().get("defaultMaximumMemory").getAsInt());
+
+			List<User> users = database.getUsers();
+
+			responseObject.add("users", gson.toJsonTree(users));
+
+			String response = gson.toJson(responseObject);
+			responseAndClose(httpExchange, response);
+		});
+		server.createContext("/users", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+			}
+
+			List<User> users = database.getUsers();
+
+			String response = gson.toJson(users);
+			responseAndClose(httpExchange, response);
 		});
 		server.createContext("/users/login", httpExchange -> {
 			if (!authVerify(httpExchange)) {

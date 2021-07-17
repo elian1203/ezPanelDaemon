@@ -3,6 +3,7 @@ package tk.elian.ezpaneldaemon.database;
 import com.google.gson.JsonObject;
 import tk.elian.ezpaneldaemon.Config;
 import tk.elian.ezpaneldaemon.ServerInstance;
+import tk.elian.ezpaneldaemon.User;
 import tk.elian.ezpaneldaemon.util.Encryption;
 
 import java.io.IOException;
@@ -118,5 +119,45 @@ public class MySQLDatabase {
 			e.printStackTrace();
 			return null;
 		}
+	}
+
+	public boolean createServer(String name, String javaPath, String serverJar, String jarPathRelativeTo,
+	                            int maximumMemory, boolean autoStart, int ownerId) {
+		try (Connection con = getConnection()) {
+			Statement statement = con.createStatement();
+
+			String sql = String.format("""
+							INSERT INTO Servers(name, dateCreated, javaPath, serverJar, jarPathRelativeTo, maximumMemory,
+								autostart, ownerId)
+							VALUES ('%s', CURRENT_DATE, '%s', '%s', '%s', %d, %b, %s);""",
+					name, javaPath, serverJar, jarPathRelativeTo, maximumMemory, autoStart, ownerId == -1 ?
+							"null" : Integer.toString(ownerId));
+			statement.execute(sql);
+			return true;
+		} catch (SQLException e) {
+			e.printStackTrace();
+			return false;
+		}
+	}
+
+	public List<User> getUsers() {
+		List<User> users = new ArrayList<>();
+
+		try (Connection con = getConnection()) {
+			ResultSet rs = con.createStatement().executeQuery("SELECT * FROM Users");
+
+			while (rs.next()) {
+				int userId = rs.getInt("userId");
+				String username = rs.getString("username");
+				String email = rs.getString("email");
+				String permissions = rs.getString("permissions");
+
+				users.add(new User(userId, username, email, permissions));
+			}
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+
+		return users;
 	}
 }

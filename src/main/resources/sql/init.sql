@@ -51,7 +51,8 @@ CREATE TABLE Servers
     serverJar         varchar(1000) NOT NULL,
     jarPathRelativeTo varchar(50)  NOT NULL,
     maximumMemory     int NULL,
-    autostart         BOOLEAN
+    autostart         BOOLEAN DEFAULT true,
+    ownerId           int NULL
 );
 
 INSERT INTO Servers(name, dateCreated, javaPath, serverJar, jarPathRelativeTo, maximumMemory, autostart)
