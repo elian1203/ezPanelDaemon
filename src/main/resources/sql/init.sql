@@ -45,17 +45,17 @@ IF
 CREATE TABLE Servers
 (
     serverId          int PRIMARY KEY AUTO_INCREMENT,
-    name              varchar(255) NOT NULL,
-    port              int          NOT NULL,
-    dateCreated       varchar(10)  NOT NULL,
-    jarPath           varchar(1000) NULL,
-    jarPathRelativeTo varchar(100),
+    name              varchar(255)  NOT NULL,
+    dateCreated       varchar(10)   NOT NULL,
+    javaPath          varchar(1000) NOT NULL,
+    serverJar         varchar(1000) NOT NULL,
+    jarPathRelativeTo varchar(50)  NOT NULL,
     maximumMemory     int NULL,
     autostart         BOOLEAN
 );
 
-INSERT INTO Servers(name, port, dateCreated, jarPath, jarPathRelativeTo, maximumMemory, autostart)
-VALUES ('Default Server', 25565, CURRENT_DATE, 'paper.jar', 'serverBase', '2048', true);
+INSERT INTO Servers(name, dateCreated, javaPath, serverJar, jarPathRelativeTo, maximumMemory, autostart)
+VALUES ('Default Server', CURRENT_DATE, '/bin/java', 'paper.jar', 'Server Base Directory', 2048, true);
 END IF;
 
 IF

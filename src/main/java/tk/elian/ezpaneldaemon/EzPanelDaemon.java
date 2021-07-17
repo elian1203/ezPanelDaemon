@@ -2,6 +2,8 @@ package tk.elian.ezpaneldaemon;
 
 import tk.elian.ezpaneldaemon.database.MySQLDatabase;
 
+import java.util.Scanner;
+
 public class EzPanelDaemon {
 
 	public static void main(String[] args) {
@@ -22,6 +24,24 @@ public class EzPanelDaemon {
 		webServer.acceptConnections();
 
 		startAutoStartServers(database);
+
+		new Thread(() -> {
+			Scanner scanner = new Scanner(System.in);
+			while (true) {
+				try {
+					String input = scanner.nextLine();
+					if (input.equalsIgnoreCase("stop")) {
+						webServer.denyConnections();
+						database.getServers().stream().filter(ServerInstance::isRunning).forEach(ServerInstance::stop);
+
+						Thread.sleep(30000);
+						System.exit(0);
+						break;
+					}
+				} catch (Exception ignored) {
+				}
+			}
+		}).start();
 	}
 
 	private static void startAutoStartServers(MySQLDatabase database) {

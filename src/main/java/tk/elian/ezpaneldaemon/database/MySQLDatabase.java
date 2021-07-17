@@ -102,14 +102,15 @@ public class MySQLDatabase {
 
 			if (rs.next()) {
 				String name = rs.getString("name");
-				int port = rs.getInt("port");
 				String dateCreated = rs.getString("dateCreated");
-				String jarPath = rs.getString("jarPath");
+				String javaPath = rs.getString("javaPath");
+				String serverJar = rs.getString("serverJar");
 				String jarPathRelativeTo = rs.getString("jarPathRelativeTo");
 				int maximumMemory = rs.getInt("maximumMemory");
 				boolean autoStart = rs.getBoolean("autoStart");
-				return new ServerDatabaseDetails(name, port, dateCreated, jarPath, jarPathRelativeTo, maximumMemory,
-						autoStart);
+
+				return new ServerDatabaseDetails(name, dateCreated, javaPath, serverJar, jarPathRelativeTo,
+						maximumMemory, autoStart);
 			} else {
 				return null;
 			}

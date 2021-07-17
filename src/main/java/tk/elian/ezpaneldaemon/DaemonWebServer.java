@@ -1,9 +1,6 @@
 package tk.elian.ezpaneldaemon;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
+import com.google.gson.*;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.codehaus.plexus.util.Base64;
@@ -42,7 +39,8 @@ public class DaemonWebServer {
 	}
 
 	public void denyConnections() {
-		server.stop(5);
+		server.stop(1);
+		server = null;
 	}
 
 	private void createServer() {
@@ -54,14 +52,6 @@ public class DaemonWebServer {
 	}
 
 	private void registerContexts() {
-		server.createContext("/login", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-			}
-
-			responseAndClose(httpExchange, "");
-		});
 		server.createContext("/servers", httpExchange -> {
 			if (!authVerify(httpExchange)) {
 				httpExchange.sendResponseHeaders(401, 0);
@@ -177,42 +167,6 @@ public class DaemonWebServer {
 				responseAndClose(httpExchange, response);
 			}
 		});
-		server.createContext("/servers/log", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-			}
-
-			ServerInstance minecraft = getMinecraftServer(httpExchange);
-
-			if (minecraft == null) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
-			} else {
-				String[] logs = minecraft.getConsoleLogs();
-				String response = String.join("\n", logs);
-
-				responseAndClose(httpExchange, response);
-			}
-		});
-		server.createContext("/servers/memory_cpu", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-			}
-
-			ServerInstance minecraft = getMinecraftServer(httpExchange);
-
-			if (minecraft == null) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
-			} else {
-				double[] memoryCPU = minecraft.getMemoryAndCPUUsage();
-				String response = memoryCPU[0] + ":" + memoryCPU[1];
-
-				responseAndClose(httpExchange, response);
-			}
-		});
 		server.createContext("/servers/icon", httpExchange -> {
 			int serverId = getServerId(httpExchange);
 
@@ -238,6 +192,35 @@ public class DaemonWebServer {
 			}
 
 			httpExchange.close();
+		});
+		server.createContext("/servers/create", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+			}
+
+			String input = getInputLine(httpExchange);
+
+			try {
+				JsonObject json = JsonParser.parseString(input).getAsJsonObject();
+
+				String javaPath = json.get("javaPath").getAsString();
+				String serverJar = json.get("serverJar").getAsString();
+				String jarPathRelativeTo = json.get("jarPathRelativeTo").getAsString();
+				int maximumMemory = json.get("maximumMemory").getAsInt();
+				boolean autoStart = json.get("autoStart").getAsBoolean();
+			} catch (Exception e) {
+				httpExchange.sendResponseHeaders(400, 0);
+				httpExchange.close();
+			}
+		});
+		server.createContext("/users/login", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+			}
+
+			responseAndClose(httpExchange, "");
 		});
 	}
 

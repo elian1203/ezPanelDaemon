@@ -3,9 +3,12 @@ package tk.elian.ezpaneldaemon.gson;
 import com.google.gson.*;
 import tk.elian.ezpaneldaemon.ServerInstance;
 import tk.elian.ezpaneldaemon.ServerProtocolStatus;
+import tk.elian.ezpaneldaemon.util.MOTDToHTML;
+import tk.elian.ezpaneldaemon.util.ServerProperties;
 import tk.elian.ezpaneldaemon.util.ServerProtocol;
 
 import java.lang.reflect.Type;
+import java.util.Map;
 
 public class ServerInstanceJsonMapper implements JsonSerializer<ServerInstance> {
 	@Override
@@ -17,7 +20,7 @@ public class ServerInstanceJsonMapper implements JsonSerializer<ServerInstance> 
 		root.addProperty("status", serverInstance.isRunning() ? "Online" : "Offline");
 		root.addProperty("name", serverInstance.getName());
 		root.addProperty("dateCreated", serverInstance.getDateCreated());
-		root.addProperty("jarPath", serverInstance.getJarPath());
+		root.addProperty("serverJar", serverInstance.getServerJar());
 		root.addProperty("jarPathRelativeTo", serverInstance.getJarPathRelativeTo());
 		root.addProperty("maximumMemory", serverInstance.getMaximumMemory());
 		root.addProperty("autoStart", serverInstance.isAutoStart());
@@ -25,22 +28,24 @@ public class ServerInstanceJsonMapper implements JsonSerializer<ServerInstance> 
 		double memory = serverInstance.getMemoryUsage();
 		root.addProperty("memory", memory);
 
-		JsonArray logs = new JsonArray();
+		String pathToProperties = serverInstance.getServerPath() + "/server.properties";
+		Map<String, String> serverProperties = ServerProperties.getServerProperties(pathToProperties);
 
-		for (String log : serverInstance.getConsoleLogs()) {
-			if (log != null)
-				logs.add(log);
-		}
+		String motd = MOTDToHTML.convertToHtml(serverProperties.getOrDefault("motd", "A Minecraft Server"));
+		int port = Integer.parseInt(serverProperties.getOrDefault("server-port", "25565"));
 
-		root.add("logs", logs);
+		root.addProperty("motd", motd);
+		root.addProperty("maxPlayers", Integer.parseInt(serverProperties.getOrDefault("max-players", "20")));
+		root.addProperty("port", port);
+		root.addProperty("world", serverProperties.getOrDefault("level-name", "world"));
+		root.addProperty("difficulty", serverProperties.getOrDefault("difficulty", "easy"));
+		root.addProperty("serverIp", serverProperties.getOrDefault("server-ip", ""));
 
 		ServerProtocolStatus protocolStatus = serverInstance.isRunning() ? ServerProtocol.fetchStatus("127.0.0.1",
-				serverInstance.getPort()) : null;
+				port) : null;
 
 		root.addProperty("version", protocolStatus == null ? "$offline$" : protocolStatus.version());
-		root.addProperty("motd", protocolStatus == null ? "$offline$" : protocolStatus.htmlMOTD());
 		root.addProperty("onlinePlayers", protocolStatus == null ? 0 : protocolStatus.onlinePlayers());
-		root.addProperty("maxPlayers", protocolStatus == null ? 0 : protocolStatus.maxPlayers());
 
 		JsonArray playerNames = new JsonArray();
 		if (protocolStatus != null) {
@@ -50,6 +55,15 @@ public class ServerInstanceJsonMapper implements JsonSerializer<ServerInstance> 
 		}
 
 		root.add("playerNames", playerNames);
+
+		JsonArray logs = new JsonArray();
+
+		for (String log : serverInstance.getConsoleLogs()) {
+			if (log != null)
+				logs.add(log);
+		}
+
+		root.add("logs", logs);
 
 		return root;
 	}

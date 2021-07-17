@@ -5,6 +5,7 @@ import tk.elian.ezpaneldaemon.database.MySQLDatabase;
 import tk.elian.ezpaneldaemon.database.ServerDatabaseDetails;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -12,14 +13,15 @@ import java.util.Map;
 
 public class ServerInstance {
 
-	private static Map<Integer, ServerInstance> runningServers = new HashMap<>();
+	private static final Map<Integer, ServerInstance> cachedServers = new HashMap<>();
 
-	private JsonObject config;
+	private final JsonObject config;
 
 	private final int serverId;
 	private final ServerDatabaseDetails databaseDetails;
 
 	private Process process;
+	private OutputStream commandOutput;
 
 	private final String[] consoleLogs = new String[500];
 	int lineCount = 0;
@@ -35,31 +37,36 @@ public class ServerInstance {
 	}
 
 	public String getName() {
-		return databaseDetails.name;
-	}
-
-	public int getPort() {
-		return databaseDetails.port;
+		return databaseDetails.name();
 	}
 
 	public String getDateCreated() {
-		return databaseDetails.dateCreated;
+		return databaseDetails.dateCreated();
 	}
 
-	public String getJarPath() {
-		return databaseDetails.jarPath;
+	public String getJavaPath() {
+		return databaseDetails.javaPath();
+	}
+
+	public String getServerJar() {
+		return databaseDetails.serverJar();
 	}
 
 	public String getJarPathRelativeTo() {
-		return databaseDetails.jarPathRelativeTo;
+		return databaseDetails.jarPathRelativeTo();
 	}
 
 	public int getMaximumMemory() {
-		return databaseDetails.maximumMemory;
+		return databaseDetails.maximumMemory();
 	}
 
 	public boolean isAutoStart() {
-		return databaseDetails.autoStart;
+		return databaseDetails.autoStart();
+	}
+
+	public String getServerPath() {
+		String serversDirectory = config.get("serverDirectory").getAsString();
+		return serversDirectory + "/" + serverId;
 	}
 
 	public boolean isRunning() {
@@ -67,16 +74,23 @@ public class ServerInstance {
 	}
 
 	public void start() {
-		if (process == null || !process.isAlive()) {
-			String java = config.get("javaPath").getAsString();
-			String serversDirectory = config.get("serverDirectory").getAsString();
-			String serverJar = config.get("defaultJar").getAsString();
-			int maximumMemory = config.get("defaultMaximumMemory").getAsInt();
+		if (!isRunning()) {
+			String java = getJavaPath();
+			String serverJar = getServerJar();
+			String jarPathRelativeTo = getJarPathRelativeTo();
+			String serverPath = getServerPath();
 
-			String serverPath = serversDirectory + "/" + serverId;
+			serverJar = switch (jarPathRelativeTo) {
+				case "Absolute" -> serverJar;
+				case "Server Base Directory" -> serverPath + "/" + serverJar;
+				default -> serverPath + "/" + serverJar;
+			};
 
-			String statement = String.format("%s -Xmx%dM -jar %s/%s nogui", java, maximumMemory,
-					serverPath, serverJar);
+			int maximumMemory = getMaximumMemory();
+			if (maximumMemory == 0)
+				maximumMemory = config.get("defaultMaximumMemory").getAsInt();
+
+			String statement = String.format("%s -Xmx%dM -jar %s nogui", java, maximumMemory, serverJar);
 
 			System.out.println(statement);
 			new Thread(() -> {
@@ -89,20 +103,29 @@ public class ServerInstance {
 				}
 			}).start();
 
-			runningServers.put(serverId, this);
+			if (!cachedServers.containsKey(serverId))
+				cachedServers.put(serverId, this);
 		}
 	}
 
 	public void stop() {
 		if (isRunning()) {
 			sendCommand("stop");
-			runningServers.remove(serverId);
+			commandOutput = null;
 		}
 	}
 
 	public void restart() {
 		stop();
-		start();
+		new Thread(() -> {
+			while (isRunning()) {
+				try {
+					Thread.sleep(500);
+				} catch (InterruptedException ignored) {
+				}
+			}
+			start();
+		}).start();
 	}
 
 	public void kill() {
@@ -114,15 +137,15 @@ public class ServerInstance {
 	}
 
 	public void sendCommand(String command) {
-		OutputStream output = process.getOutputStream();
-		BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(output));
-
 		try {
-			writer.write(command + "\n");
-			writer.flush();
-			writer.close();
-		} catch (IOException e) {
-			e.printStackTrace();
+			if (commandOutput == null)
+				commandOutput = process.getOutputStream();
+
+			command += "\n";
+			byte[] bytes = command.getBytes(StandardCharsets.UTF_8);
+			commandOutput.write(bytes);
+			commandOutput.flush();
+		} catch (IOException ignored) {
 		}
 	}
 
@@ -167,18 +190,24 @@ public class ServerInstance {
 			BufferedReader reader = new BufferedReader(new InputStreamReader(processInput));
 
 			String line;
-			while (process.isAlive()) {
+			while (isRunning()) {
 				line = reader.readLine();
-				if (line != null) {
-					if (lineCount < 500) {
-						consoleLogs[lineCount++] = line;
-					} else {
-						shiftArrayLeft();
-						consoleLogs[lineCount - 1] = line;
-					}
-				}
+
+				if (line == null)
+					break;
+
+				addLog(line);
 			}
 		} catch (IOException ignored) {
+		}
+	}
+
+	public void addLog(String log) {
+		if (lineCount < 500) {
+			consoleLogs[lineCount++] = log;
+		} else {
+			shiftArrayLeft();
+			consoleLogs[lineCount - 1] = log;
 		}
 	}
 
@@ -187,7 +216,7 @@ public class ServerInstance {
 	}
 
 	public static ServerInstance getServerInstance(int serverId, MySQLDatabase database, Config config) {
-		ServerInstance serverInstance = runningServers.get(serverId);
+		ServerInstance serverInstance = cachedServers.get(serverId);
 
 		if (serverInstance == null) {
 			ServerDatabaseDetails databaseDetails = database.getServerDetailsById(serverId);
@@ -196,6 +225,7 @@ public class ServerInstance {
 				return null;
 
 			serverInstance = new ServerInstance(serverId, config, databaseDetails);
+			cachedServers.put(serverId, serverInstance);
 		}
 
 		return serverInstance;
@@ -203,6 +233,10 @@ public class ServerInstance {
 
 	public static ServerInstance getServerInstance(int serverId, Config config,
 	                                               ServerDatabaseDetails databaseDetails) {
-		return runningServers.getOrDefault(serverId, new ServerInstance(serverId, config, databaseDetails));
+		ServerInstance serverInstance = cachedServers.getOrDefault(serverId, new ServerInstance(serverId, config,
+				databaseDetails));
+
+		cachedServers.put(serverId, serverInstance);
+		return serverInstance;
 	}
 }
