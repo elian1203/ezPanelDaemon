@@ -37,14 +37,14 @@ public class ServerInstanceJsonMapper implements JsonSerializer<ServerInstance> 
 		ServerProtocolStatus protocolStatus = serverInstance.isRunning() ? ServerProtocol.fetchStatus("127.0.0.1",
 				serverInstance.getPort()) : null;
 
-		root.addProperty("version", protocolStatus == null ? "$offline$" : protocolStatus.getVersion());
-		root.addProperty("motd", protocolStatus == null ? "$offline$" : protocolStatus.getHtmlMOTD());
-		root.addProperty("onlinePlayers", protocolStatus == null ? 0 : protocolStatus.getOnlinePlayers());
-		root.addProperty("maxPlayers", protocolStatus == null ? 0 : protocolStatus.getMaxPlayers());
+		root.addProperty("version", protocolStatus == null ? "$offline$" : protocolStatus.version());
+		root.addProperty("motd", protocolStatus == null ? "$offline$" : protocolStatus.htmlMOTD());
+		root.addProperty("onlinePlayers", protocolStatus == null ? 0 : protocolStatus.onlinePlayers());
+		root.addProperty("maxPlayers", protocolStatus == null ? 0 : protocolStatus.maxPlayers());
 
 		JsonArray playerNames = new JsonArray();
 		if (protocolStatus != null) {
-			for (String name : protocolStatus.getPlayerNames()) {
+			for (String name : protocolStatus.playerNames()) {
 				playerNames.add(name);
 			}
 		}
