@@ -2,6 +2,9 @@ package tk.elian.ezpaneldaemon;
 
 import tk.elian.ezpaneldaemon.database.MySQLDatabase;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.Scanner;
 
 public class EzPanelDaemon {
@@ -34,7 +37,7 @@ public class EzPanelDaemon {
 						webServer.denyConnections();
 						database.getServers().stream().filter(ServerInstance::isRunning).forEach(ServerInstance::stop);
 
-						Thread.sleep(30000);
+						Thread.sleep(10000);
 						System.exit(0);
 						break;
 					}
@@ -46,5 +49,21 @@ public class EzPanelDaemon {
 
 	private static void startAutoStartServers(MySQLDatabase database) {
 		database.getServers().stream().filter(ServerInstance::isAutoStart).forEach(ServerInstance::start);
+	}
+
+	public static int copy(InputStream input, OutputStream output)
+			throws IOException {
+		byte[] buffer = new byte[1024 * 4];
+		long count = 0;
+		int n = 0;
+		while (-1 != (n = input.read(buffer))) {
+			output.write(buffer, 0, n);
+			count += n;
+		}
+
+		if (count > Integer.MAX_VALUE) {
+			return -1;
+		}
+		return (int) count;
 	}
 }

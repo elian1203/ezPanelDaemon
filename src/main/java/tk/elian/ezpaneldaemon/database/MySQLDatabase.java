@@ -6,11 +6,10 @@ import tk.elian.ezpaneldaemon.ServerInstance;
 import tk.elian.ezpaneldaemon.User;
 import tk.elian.ezpaneldaemon.util.Encryption;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.sql.*;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 public class MySQLDatabase {
@@ -47,13 +46,74 @@ public class MySQLDatabase {
 	}
 
 	private void createTables(Connection con) throws SQLException {
-		try {
-			InputStream input = getClass().getClassLoader().getResourceAsStream("sql/init.sql");
-			InputStreamReader reader = new InputStreamReader(input);
+		Statement statement = con.createStatement();
 
-			new ScriptRunner(con, false, true).runScript(reader);
-		} catch (IOException e) {
-			e.printStackTrace();
+		ResultSet rs = statement.executeQuery("""
+				SELECT COUNT(*)
+				FROM information_schema.tables
+				WHERE table_schema = DATABASE()
+				  AND table_name = "Users\"""");
+		rs.next();
+		boolean usersExists = rs.getBoolean(1);
+
+		rs = statement.executeQuery("""
+				SELECT COUNT(*)
+				FROM information_schema.tables
+				WHERE table_schema = DATABASE()
+				  AND table_name = "Servers\"""");
+		rs.next();
+		boolean serversExists = rs.getBoolean(1);
+
+		rs = statement.executeQuery("""
+				SELECT COUNT(*)
+				FROM information_schema.tables
+				WHERE table_schema = DATABASE()
+				  AND table_name = "GlobalProperties\"""");
+		rs.next();
+		boolean propertiesExists = rs.getBoolean(1);
+
+		if (!usersExists) {
+			statement.execute("""
+					CREATE TABLE Users
+					(
+					    userId       int PRIMARY KEY AUTO_INCREMENT,
+					    username     varchar(255)  NOT NULL,
+					    email        varchar(255) NULL,
+					    password     varchar(1000) NOT NULL,
+					    passwordDate varchar(10)   NOT NULL,
+					    permissions  varchar(1000) NULL
+					);""");
+			statement.execute("""
+					INSERT INTO Users(username, email, password, passwordDate, permissions)
+									VALUES ('admin', 'admin@local', 'qEUqmzQpHhxmV34hIwaLTA==', '2000-12-03', '*');""");
+		}
+
+		if (!serversExists) {
+			statement.execute("""
+					CREATE TABLE Servers
+					(
+						serverId          int PRIMARY KEY,
+					    name              varchar(255)  NOT NULL,
+					    dateCreated       varchar(10)   NOT NULL,
+					    javaPath          varchar(1000) NOT NULL,
+					    serverJar         varchar(1000) NOT NULL,
+					    jarPathRelativeTo varchar(50)  NOT NULL,
+					    maximumMemory     int NULL,
+					    autostart         BOOLEAN DEFAULT true,
+						ownerId           int NULL
+					);""");
+			statement.execute("""
+					INSERT INTO Servers(serverId, name, dateCreated, javaPath, serverJar, jarPathRelativeTo, maximumMemory, autostart)
+					VALUES (1, 'Default Server', CURRENT_DATE, '/bin/java', 'paper.jar', 'Server Base Directory', 2048, true);""");
+		}
+
+		if (!propertiesExists) {
+			statement.execute("""
+					CREATE TABLE GlobalProperties
+					(
+					    property varchar(1000),
+					    value    varchar(1000)
+					);""");
 		}
 	}
 
@@ -96,6 +156,24 @@ public class MySQLDatabase {
 		return servers;
 	}
 
+	public int getMaxServerId() {
+		try (Connection con = getConnection()) {
+			Statement statement = con.createStatement();
+			ResultSet rs = statement.executeQuery("SELECT MAX(serverId) FROM Servers");
+
+			rs.next();
+			int serverId = rs.getInt(1);
+
+			if (rs.wasNull())
+				serverId = 0;
+
+			return serverId;
+		} catch (SQLException e) {
+			e.printStackTrace();
+			return 0;
+		}
+	}
+
 	public ServerDatabaseDetails getServerDetailsById(int serverId) {
 		try (Connection con = getConnection()) {
 			Statement statement = con.createStatement();
@@ -109,9 +187,10 @@ public class MySQLDatabase {
 				String jarPathRelativeTo = rs.getString("jarPathRelativeTo");
 				int maximumMemory = rs.getInt("maximumMemory");
 				boolean autoStart = rs.getBoolean("autoStart");
+				int ownerId = rs.getInt("ownerId");
 
 				return new ServerDatabaseDetails(name, dateCreated, javaPath, serverJar, jarPathRelativeTo,
-						maximumMemory, autoStart);
+						maximumMemory, autoStart, ownerId);
 			} else {
 				return null;
 			}
@@ -121,22 +200,37 @@ public class MySQLDatabase {
 		}
 	}
 
-	public boolean createServer(String name, String javaPath, String serverJar, String jarPathRelativeTo,
-	                            int maximumMemory, boolean autoStart, int ownerId) {
+	public int createServer(String name, String javaPath, String serverJar, String jarPathRelativeTo,
+	                        int maximumMemory, boolean autoStart, int ownerId) {
+		try (Connection con = getConnection()) {
+			Statement statement = con.createStatement();
+
+			int newServerId = getMaxServerId() + 1;
+			String sql = String.format("""
+							INSERT INTO Servers(serverId, name, dateCreated, javaPath, serverJar, jarPathRelativeTo,
+								maximumMemory, autostart, ownerId)
+							VALUES (%d, '%s', CURRENT_DATE, '%s', '%s', '%s', %d, %b, %s);""",
+					newServerId, name, javaPath, serverJar, jarPathRelativeTo, maximumMemory, autoStart,
+					ownerId == -1 ?
+							"null" : Integer.toString(ownerId));
+			statement.execute(sql);
+			return newServerId;
+		} catch (SQLException e) {
+			e.printStackTrace();
+			return -1;
+		}
+	}
+
+	public void deleteServer(int serverId) {
 		try (Connection con = getConnection()) {
 			Statement statement = con.createStatement();
 
 			String sql = String.format("""
-							INSERT INTO Servers(name, dateCreated, javaPath, serverJar, jarPathRelativeTo, maximumMemory,
-								autostart, ownerId)
-							VALUES ('%s', CURRENT_DATE, '%s', '%s', '%s', %d, %b, %s);""",
-					name, javaPath, serverJar, jarPathRelativeTo, maximumMemory, autoStart, ownerId == -1 ?
-							"null" : Integer.toString(ownerId));
+					DELETE FROM Servers
+					WHERE serverId = %d""", serverId);
 			statement.execute(sql);
-			return true;
 		} catch (SQLException e) {
 			e.printStackTrace();
-			return false;
 		}
 	}
 
@@ -159,5 +253,79 @@ public class MySQLDatabase {
 		}
 
 		return users;
+	}
+
+	public boolean createUser(String username, String email, String password, String permissions) {
+		String passwordDate = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+		String passwordEncrypted = Encryption.encrypt(password, passwordDate);
+
+		try (Connection con = getConnection()) {
+			String sql = String.format("""
+							INSERT INTO Users(username, email, password, passwordDate, permissions)
+							VALUES ('%s', '%s', '%s', '%s', '%s')""", username, email, passwordEncrypted, passwordDate,
+					permissions);
+			con.createStatement().execute(sql);
+			return true;
+		} catch (SQLException e) {
+			e.printStackTrace();
+			return false;
+		}
+	}
+
+	public void setUserPassword(int userId, String password) {
+		String passwordDate = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+		String passwordEncrypted = Encryption.encrypt(password, passwordDate);
+
+		try (Connection con = getConnection()) {
+			String sql = String.format("""
+					UPDATE Users
+					SET
+						password = '%s', passwordDate = '%s'
+					WHERE
+						userId = %d""", passwordEncrypted, passwordDate, userId);
+			con.createStatement().execute(sql);
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public void setUserEmail(int userId, String email) {
+		try (Connection con = getConnection()) {
+			String sql = String.format("""
+					UPDATE Users
+					SET
+						email = '%s'
+					WHERE
+						userId = %d""", email, userId);
+			con.createStatement().execute(sql);
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public void setUserPermissions(int userId, String permissions) {
+		try (Connection con = getConnection()) {
+			String sql = String.format("""
+					UPDATE Users
+					SET
+						permissions = '%s'
+					WHERE
+						userId = %d""", permissions, userId);
+			con.createStatement().execute(sql);
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public void deleteUser(int userId) {
+		try (Connection con = getConnection()) {
+			String sql = String.format("""
+					DELETE FROM Users
+					WHERE
+						userId = %d""", userId);
+			con.createStatement().execute(sql);
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
 	}
 }

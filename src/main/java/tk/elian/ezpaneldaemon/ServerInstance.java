@@ -64,6 +64,10 @@ public class ServerInstance {
 		return databaseDetails.autoStart();
 	}
 
+	public int getOwnerId () {
+		return databaseDetails.ownerId();
+	}
+
 	public String getServerPath() {
 		String serversDirectory = config.get("serverDirectory").getAsString();
 		return serversDirectory + "/" + serverId;
@@ -215,6 +219,27 @@ public class ServerInstance {
 		if (lineCount - 1 >= 0) System.arraycopy(consoleLogs, 1, consoleLogs, 0, lineCount - 1);
 	}
 
+	public void createServerFiles() {
+		File serverFolder = new File(getServerPath());
+		serverFolder.mkdirs();
+
+		if (getServerJar().equals("paper.jar") && getJarPathRelativeTo().equals("Server Base Directory")) {
+			File jarFile = new File(getServerPath() + "/paper.jar");
+			if (!jarFile.exists()) {
+				try {
+					jarFile.createNewFile();
+
+					InputStream input = getClass().getClassLoader().getResourceAsStream("paper-1.17.1-165.jar");
+					OutputStream output = new FileOutputStream(jarFile);
+
+					EzPanelDaemon.copy(input, output);
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+	}
+
 	public static ServerInstance getServerInstance(int serverId, MySQLDatabase database, Config config) {
 		ServerInstance serverInstance = cachedServers.get(serverId);
 
@@ -238,5 +263,9 @@ public class ServerInstance {
 
 		cachedServers.put(serverId, serverInstance);
 		return serverInstance;
+	}
+
+	public static void removeCachedServer(int serverId) {
+		cachedServers.remove(serverId);
 	}
 }

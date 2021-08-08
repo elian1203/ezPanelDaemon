@@ -15,6 +15,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.Optional;
 import java.util.Scanner;
 
 public class DaemonWebServer {
@@ -56,14 +57,19 @@ public class DaemonWebServer {
 			if (!authVerify(httpExchange)) {
 				httpExchange.sendResponseHeaders(401, 0);
 				httpExchange.close();
+				return;
 			}
+
+			User user = getAuthenticatedUser(httpExchange);
 
 			List<ServerInstance> servers = database.getServers();
 			JsonArray array = new JsonArray();
 
 			for (ServerInstance serverInstance : servers) {
-				JsonElement json = gson.toJsonTree(serverInstance, ServerInstance.class);
-				array.add(json);
+				if (user.hasServerViewAccess(serverInstance)) {
+					JsonElement json = gson.toJsonTree(serverInstance, ServerInstance.class);
+					array.add(json);
+				}
 			}
 
 			String response = gson.toJson(array);
@@ -82,6 +88,14 @@ public class DaemonWebServer {
 				httpExchange.sendResponseHeaders(400, 0);
 				httpExchange.close();
 			} else {
+				User user = getAuthenticatedUser(httpExchange);
+
+				if (!user.hasServerCommandAccess(minecraft)) {
+					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.close();
+					return;
+				}
+
 				minecraft.start();
 				responseAndClose(httpExchange, "");
 			}
@@ -90,6 +104,7 @@ public class DaemonWebServer {
 			if (!authVerify(httpExchange)) {
 				httpExchange.sendResponseHeaders(401, 0);
 				httpExchange.close();
+				return;
 			}
 
 			ServerInstance minecraft = getMinecraftServer(httpExchange);
@@ -98,6 +113,14 @@ public class DaemonWebServer {
 				httpExchange.sendResponseHeaders(400, 0);
 				httpExchange.close();
 			} else {
+				User user = getAuthenticatedUser(httpExchange);
+
+				if (!user.hasServerCommandAccess(minecraft)) {
+					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.close();
+					return;
+				}
+
 				minecraft.stop();
 				responseAndClose(httpExchange, "");
 			}
@@ -106,6 +129,7 @@ public class DaemonWebServer {
 			if (!authVerify(httpExchange)) {
 				httpExchange.sendResponseHeaders(401, 0);
 				httpExchange.close();
+				return;
 			}
 
 			ServerInstance minecraft = getMinecraftServer(httpExchange);
@@ -114,6 +138,14 @@ public class DaemonWebServer {
 				httpExchange.sendResponseHeaders(400, 0);
 				httpExchange.close();
 			} else {
+				User user = getAuthenticatedUser(httpExchange);
+
+				if (!user.hasServerCommandAccess(minecraft)) {
+					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.close();
+					return;
+				}
+
 				minecraft.restart();
 				responseAndClose(httpExchange, "");
 			}
@@ -122,6 +154,7 @@ public class DaemonWebServer {
 			if (!authVerify(httpExchange)) {
 				httpExchange.sendResponseHeaders(401, 0);
 				httpExchange.close();
+				return;
 			}
 
 			ServerInstance minecraft = getMinecraftServer(httpExchange);
@@ -130,6 +163,14 @@ public class DaemonWebServer {
 				httpExchange.sendResponseHeaders(400, 0);
 				httpExchange.close();
 			} else {
+				User user = getAuthenticatedUser(httpExchange);
+
+				if (!user.hasServerCommandAccess(minecraft)) {
+					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.close();
+					return;
+				}
+
 				minecraft.kill();
 				responseAndClose(httpExchange, "");
 			}
@@ -138,6 +179,7 @@ public class DaemonWebServer {
 			if (!authVerify(httpExchange)) {
 				httpExchange.sendResponseHeaders(401, 0);
 				httpExchange.close();
+				return;
 			}
 
 			ServerInstance minecraft = getMinecraftServer(httpExchange);
@@ -146,6 +188,14 @@ public class DaemonWebServer {
 				httpExchange.sendResponseHeaders(400, 0);
 				httpExchange.close();
 			} else {
+				User user = getAuthenticatedUser(httpExchange);
+
+				if (!user.hasServerCommandAccess(minecraft)) {
+					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.close();
+					return;
+				}
+
 				String command = getInputLine(httpExchange);
 				minecraft.sendCommand(command);
 				responseAndClose(httpExchange, "");
@@ -155,6 +205,7 @@ public class DaemonWebServer {
 			if (!authVerify(httpExchange)) {
 				httpExchange.sendResponseHeaders(401, 0);
 				httpExchange.close();
+				return;
 			}
 
 			ServerInstance minecraft = getMinecraftServer(httpExchange);
@@ -163,16 +214,31 @@ public class DaemonWebServer {
 				httpExchange.sendResponseHeaders(400, 0);
 				httpExchange.close();
 			} else {
-				String response = gson.toJson(minecraft);
+				User user = getAuthenticatedUser(httpExchange);
+
+				if (!user.hasServerViewAccess(minecraft)) {
+					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.close();
+					return;
+				}
+
+				JsonObject obj = gson.toJsonTree(minecraft).getAsJsonObject();
+
+				if (!user.hasServerConsoleAccess(minecraft)) {
+					obj.remove("logs");
+				}
+
+				String response = gson.toJson(obj);
 				responseAndClose(httpExchange, response);
 			}
 		});
 		server.createContext("/servers/icon", httpExchange -> {
-			int serverId = getServerId(httpExchange);
+			int serverId = getEndingId(httpExchange);
 
 			if (serverId == -1) {
 				httpExchange.sendResponseHeaders(400, 0);
 				httpExchange.close();
+				return;
 			}
 
 			String serversDirectory = config.getConfig().get("serverDirectory").getAsString();
@@ -193,25 +259,19 @@ public class DaemonWebServer {
 
 			httpExchange.close();
 		});
-		server.createContext("/servers/defaultSettings", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-			}
-
-			JsonObject defaultSettings = new JsonObject();
-			defaultSettings.addProperty("javaPath", config.getConfig().get("javaPath").getAsString());
-			defaultSettings.addProperty("defaultJar", config.getConfig().get("defaultJar").getAsString());
-			defaultSettings.addProperty("defaultMaximumMemory",
-					config.getConfig().get("defaultMaximumMemory").getAsInt());
-
-			String response = gson.toJson(defaultSettings);
-			responseAndClose(httpExchange, response);
-		});
 		server.createContext("/servers/create", httpExchange -> {
 			if (!authVerify(httpExchange)) {
 				httpExchange.sendResponseHeaders(401, 0);
 				httpExchange.close();
+				return;
+			}
+
+			User user = getAuthenticatedUser(httpExchange);
+
+			if (!user.hasCreateServerAccess()) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
 			}
 
 			String input = getInputLine(httpExchange);
@@ -225,15 +285,21 @@ public class DaemonWebServer {
 				String jarPathRelativeTo = json.get("jarPathRelativeTo").getAsString();
 				int maximumMemory = json.get("maximumMemory").getAsInt();
 				boolean autoStart = json.get("autoStart").getAsBoolean();
-				int ownerId = json.has("ownerId") ? json.get("ownerId").getAsInt() : -1;
+				int ownerId = json.has("owner") ? json.get("owner").getAsInt() : -1;
 
-				boolean success = database.createServer(name, javaPath, serverJar, jarPathRelativeTo, maximumMemory,
+				int serverId = database.createServer(name, javaPath, serverJar, jarPathRelativeTo, maximumMemory,
 						autoStart, ownerId);
 
-				if (success) {
-					httpExchange.sendResponseHeaders(200, 0);
-				} else {
+				if (serverId == -1) {
 					httpExchange.sendResponseHeaders(500, 0);
+				} else {
+					ServerInstance serverInstance = ServerInstance.getServerInstance(serverId, database, config);
+
+					if (serverInstance != null) {
+						serverInstance.createServerFiles();
+					}
+
+					httpExchange.sendResponseHeaders(200, 0);
 				}
 
 				httpExchange.close();
@@ -242,10 +308,39 @@ public class DaemonWebServer {
 				httpExchange.close();
 			}
 		});
+		server.createContext("/servers/delete", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			User user = getAuthenticatedUser(httpExchange);
+
+			if (!user.hasDeleteServerAccess()) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			int serverId = getEndingId(httpExchange);
+
+			if (serverId == -1) {
+				httpExchange.sendResponseHeaders(400, 0);
+				httpExchange.close();
+				return;
+			}
+
+			database.deleteServer(serverId);
+			ServerInstance.removeCachedServer(serverId);
+
+			responseAndClose(httpExchange, "");
+		});
 		server.createContext("/servers/create/config", httpExchange -> {
 			if (!authVerify(httpExchange)) {
 				httpExchange.sendResponseHeaders(401, 0);
 				httpExchange.close();
+				return;
 			}
 
 			JsonObject responseObject = new JsonObject();
@@ -255,8 +350,10 @@ public class DaemonWebServer {
 					config.getConfig().get("defaultMaximumMemory").getAsInt());
 
 			List<User> users = database.getUsers();
-
 			responseObject.add("users", gson.toJsonTree(users));
+
+			List<ServerInstance> servers = database.getServers();
+			responseObject.add("servers", gson.toJsonTree(servers));
 
 			String response = gson.toJson(responseObject);
 			responseAndClose(httpExchange, response);
@@ -265,6 +362,7 @@ public class DaemonWebServer {
 			if (!authVerify(httpExchange)) {
 				httpExchange.sendResponseHeaders(401, 0);
 				httpExchange.close();
+				return;
 			}
 
 			List<User> users = database.getUsers();
@@ -276,8 +374,189 @@ public class DaemonWebServer {
 			if (!authVerify(httpExchange)) {
 				httpExchange.sendResponseHeaders(401, 0);
 				httpExchange.close();
+				return;
 			}
 
+			responseAndClose(httpExchange, "");
+		});
+		server.createContext("/users/self", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			User user = getAuthenticatedUser(httpExchange);
+			responseAndClose(httpExchange, gson.toJson(user));
+		});
+		server.createContext("/users/create", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			User authenticatedUser = getAuthenticatedUser(httpExchange);
+
+			if (!authenticatedUser.hasCreateUserAccess()) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			JsonElement inputElement = JsonParser.parseString(getInputLine(httpExchange));
+
+			if (!inputElement.isJsonObject()) {
+				httpExchange.sendResponseHeaders(400, 0);
+				httpExchange.close();
+				return;
+			}
+
+			try {
+				JsonObject obj = inputElement.getAsJsonObject();
+
+				String username = obj.get("username").getAsString();
+				String email = obj.get("email").getAsString();
+				String password = obj.get("password").getAsString();
+				String permissions = obj.get("permissions").getAsString();
+
+				boolean success = database.createUser(username, email, password, permissions);
+
+				if (success) {
+					responseAndClose(httpExchange, "");
+				} else {
+					httpExchange.sendResponseHeaders(500, 0);
+					httpExchange.close();
+				}
+			} catch (Exception ignored) {
+			}
+		});
+		server.createContext("/users/set/pass", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			User authenticatedUser = getAuthenticatedUser(httpExchange);
+
+			JsonElement inputElement = JsonParser.parseString(getInputLine(httpExchange));
+
+			if (!inputElement.isJsonObject()) {
+				httpExchange.sendResponseHeaders(400, 0);
+				httpExchange.close();
+				return;
+			}
+
+			try {
+				JsonObject obj = inputElement.getAsJsonObject();
+
+				int userId = obj.get("userId").getAsInt();
+				String password = obj.get("password").getAsString();
+
+				if (!authenticatedUser.hasModifyUserAccess() && authenticatedUser.userId() != userId) {
+					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.close();
+					return;
+				}
+
+				database.setUserPassword(userId, password);
+				responseAndClose(httpExchange, "");
+			} catch (Exception ignored) {
+			}
+		});
+		server.createContext("/users/set/email", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			User authenticatedUser = getAuthenticatedUser(httpExchange);
+
+			JsonElement inputElement = JsonParser.parseString(getInputLine(httpExchange));
+
+			if (!inputElement.isJsonObject()) {
+				httpExchange.sendResponseHeaders(400, 0);
+				httpExchange.close();
+				return;
+			}
+
+			try {
+				JsonObject obj = inputElement.getAsJsonObject();
+
+				int userId = obj.get("userId").getAsInt();
+				String email = obj.get("email").getAsString();
+
+				if (!authenticatedUser.hasModifyUserAccess() && authenticatedUser.userId() != userId) {
+					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.close();
+					return;
+				}
+
+				database.setUserEmail(userId, email);
+				responseAndClose(httpExchange, "");
+			} catch (Exception ignored) {
+			}
+		});
+		server.createContext("/users/set/permissions", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			User authenticatedUser = getAuthenticatedUser(httpExchange);
+
+			JsonElement inputElement = JsonParser.parseString(getInputLine(httpExchange));
+
+			if (!inputElement.isJsonObject()) {
+				httpExchange.sendResponseHeaders(400, 0);
+				httpExchange.close();
+				return;
+			}
+
+			try {
+				JsonObject obj = inputElement.getAsJsonObject();
+
+				int userId = obj.get("userId").getAsInt();
+				String permissions = obj.get("permissions").getAsString();
+
+				if (!authenticatedUser.hasModifyUserAccess() || authenticatedUser.userId() == userId) {
+					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.close();
+					return;
+				}
+
+				database.setUserPermissions(userId, permissions);
+				responseAndClose(httpExchange, "");
+			} catch (Exception ignored) {
+			}
+		});
+		server.createContext("/users/delete", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			User authenticatedUser = getAuthenticatedUser(httpExchange);
+
+			int userId = getEndingId(httpExchange);
+
+			if (userId == -1) {
+				httpExchange.sendResponseHeaders(400, 0);
+				httpExchange.close();
+				return;
+			}
+
+			if (!authenticatedUser.hasModifyUserAccess() || authenticatedUser.userId() == userId) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			database.deleteUser(userId);
 			responseAndClose(httpExchange, "");
 		});
 	}
@@ -298,7 +577,19 @@ public class DaemonWebServer {
 		return database.authenticateUser(user, pass);
 	}
 
-	private int getServerId(HttpExchange exchange) {
+	private User getAuthenticatedUser(HttpExchange httpExchange) {
+		String auth = httpExchange.getRequestHeaders().get("Authorization").get(0);
+		String base64 = auth.split(" ")[1];
+		String decoded = new String(Base64.decodeBase64(base64.getBytes(StandardCharsets.UTF_8)));
+		String[] split = decoded.split(":");
+
+		String username = split[0];
+		Optional<User> user = database.getUsers().stream().filter(u -> u.username().equals(username)).findFirst();
+
+		return user.orElse(null);
+	}
+
+	private int getEndingId(HttpExchange exchange) {
 		String path = exchange.getRequestURI().getPath();
 		String[] split = path.split("/");
 		String id = split[split.length - 1];
@@ -311,7 +602,7 @@ public class DaemonWebServer {
 	}
 
 	private ServerInstance getMinecraftServer(HttpExchange exchange) {
-		int serverId = getServerId(exchange);
+		int serverId = getEndingId(exchange);
 
 		if (serverId == -1)
 			return null;
