@@ -76,16 +76,21 @@ public class MySQLDatabase {
 			statement.execute("""
 					CREATE TABLE Users
 					(
-					    userId       int PRIMARY KEY AUTO_INCREMENT,
+					    userId       int PRIMARY KEY,
 					    username     varchar(255)  NOT NULL,
 					    email        varchar(255) NULL,
 					    password     varchar(1000) NOT NULL,
 					    passwordDate varchar(10)   NOT NULL,
 					    permissions  varchar(1000) NULL
 					);""");
+		}
+
+		rs = statement.executeQuery("SELECT COUNT(*) FROM Users");
+		rs.next();
+		if (rs.getInt(1) == 0) {
 			statement.execute("""
-					INSERT INTO Users(username, email, password, passwordDate, permissions)
-									VALUES ('admin', 'admin@local', 'qEUqmzQpHhxmV34hIwaLTA==', '2000-12-03', '*');""");
+					INSERT INTO Users(userId, username, email, password, passwordDate, permissions)
+									VALUES (1, 'admin', 'admin@local', 'qEUqmzQpHhxmV34hIwaLTA==', '2000-12-03', '*');""");
 		}
 
 		if (!serversExists) {
@@ -100,11 +105,12 @@ public class MySQLDatabase {
 					    jarPathRelativeTo varchar(50)  NOT NULL,
 					    maximumMemory     int NULL,
 					    autostart         BOOLEAN DEFAULT true,
+					    ftp               BOOLEAN DEFAULT true,
 						ownerId           int NULL
 					);""");
 			statement.execute("""
-					INSERT INTO Servers(serverId, name, dateCreated, javaPath, serverJar, jarPathRelativeTo, maximumMemory, autostart)
-					VALUES (1, 'Default Server', CURRENT_DATE, '/bin/java', 'paper.jar', 'Server Base Directory', 2048, true);""");
+					INSERT INTO Servers(serverId, name, dateCreated, javaPath, serverJar, jarPathRelativeTo, maximumMemory)
+					VALUES (1, 'Default Server', CURRENT_DATE, '/bin/java', 'paper.jar', 'Server Base Directory', 2048);""");
 		}
 
 		if (!propertiesExists) {
@@ -156,6 +162,10 @@ public class MySQLDatabase {
 		return servers;
 	}
 
+	public ServerInstance getServer(int serverId) {
+		return getServers().stream().filter(serverInstance -> serverInstance.getServerId() == serverId).findFirst().orElse(null);
+	}
+
 	public int getMaxServerId() {
 		try (Connection con = getConnection()) {
 			Statement statement = con.createStatement();
@@ -168,6 +178,24 @@ public class MySQLDatabase {
 				serverId = 0;
 
 			return serverId;
+		} catch (SQLException e) {
+			e.printStackTrace();
+			return 0;
+		}
+	}
+
+	public int getMaxUserId() {
+		try (Connection con = getConnection()) {
+			Statement statement = con.createStatement();
+			ResultSet rs = statement.executeQuery("SELECT MAX(userId) FROM Users");
+
+			rs.next();
+			int userId = rs.getInt(1);
+
+			if (rs.wasNull())
+				userId = 0;
+
+			return userId;
 		} catch (SQLException e) {
 			e.printStackTrace();
 			return 0;
@@ -187,10 +215,11 @@ public class MySQLDatabase {
 				String jarPathRelativeTo = rs.getString("jarPathRelativeTo");
 				int maximumMemory = rs.getInt("maximumMemory");
 				boolean autoStart = rs.getBoolean("autoStart");
+				boolean ftp = rs.getBoolean("ftp");
 				int ownerId = rs.getInt("ownerId");
 
 				return new ServerDatabaseDetails(name, dateCreated, javaPath, serverJar, jarPathRelativeTo,
-						maximumMemory, autoStart, ownerId);
+						maximumMemory, autoStart, ftp, ownerId);
 			} else {
 				return null;
 			}
@@ -255,15 +284,20 @@ public class MySQLDatabase {
 		return users;
 	}
 
+	public User getUser(String username) {
+		return getUsers().stream().filter(user -> user.username().equalsIgnoreCase(username)).findFirst().orElse(null);
+	}
+
 	public boolean createUser(String username, String email, String password, String permissions) {
 		String passwordDate = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
 		String passwordEncrypted = Encryption.encrypt(password, passwordDate);
 
 		try (Connection con = getConnection()) {
+			int newUserId = getMaxUserId() + 1;
 			String sql = String.format("""
-							INSERT INTO Users(username, email, password, passwordDate, permissions)
-							VALUES ('%s', '%s', '%s', '%s', '%s')""", username, email, passwordEncrypted, passwordDate,
-					permissions);
+							INSERT INTO Users(userId, username, email, password, passwordDate, permissions)
+							VALUES (%d, '%s', '%s', '%s', '%s', '%s')""", newUserId, username, email,
+					passwordEncrypted, passwordDate, permissions);
 			con.createStatement().execute(sql);
 			return true;
 		} catch (SQLException e) {

@@ -96,6 +96,7 @@ public class DaemonWebServer {
 					return;
 				}
 
+				minecraft.addLog("<span class=\"fw-bold\">[ezPanel]</span> Received start command");
 				minecraft.start();
 				responseAndClose(httpExchange, "");
 			}
@@ -121,6 +122,7 @@ public class DaemonWebServer {
 					return;
 				}
 
+				minecraft.addLog("<span class=\"fw-bold\">[ezPanel]</span> Received stop command");
 				minecraft.stop();
 				responseAndClose(httpExchange, "");
 			}
@@ -146,6 +148,7 @@ public class DaemonWebServer {
 					return;
 				}
 
+				minecraft.addLog("<span class=\"fw-bold\">[ezPanel]</span> Received restart command");
 				minecraft.restart();
 				responseAndClose(httpExchange, "");
 			}
@@ -171,6 +174,7 @@ public class DaemonWebServer {
 					return;
 				}
 
+				minecraft.addLog("<span class=\"fw-bold\">[ezPanel]</span> Received kill command");
 				minecraft.kill();
 				responseAndClose(httpExchange, "");
 			}

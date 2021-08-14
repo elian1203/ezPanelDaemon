@@ -64,7 +64,11 @@ public class ServerInstance {
 		return databaseDetails.autoStart();
 	}
 
-	public int getOwnerId () {
+	public boolean ftpEnabled() {
+		return databaseDetails.ftp();
+	}
+
+	public int getOwnerId() {
 		return databaseDetails.ownerId();
 	}
 

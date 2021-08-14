@@ -45,4 +45,11 @@ public record User(int userId, String username, String email, String permissions
 				|| permissions.contains("server." + serverId + ".*")
 				|| permissions.contains("server." + serverId + ".edit");
 	}
+
+	public boolean hasServerFTPAccess(ServerInstance serverInstance) {
+		int serverId = serverInstance.getServerId();
+		return serverInstance.ftpEnabled() && (serverInstance.getOwnerId() == userId || permissions.equals("*")
+				|| permissions.contains("server." + serverId + ".*")
+				|| permissions.contains("server." + serverId + ".ftp"));
+	}
 }
