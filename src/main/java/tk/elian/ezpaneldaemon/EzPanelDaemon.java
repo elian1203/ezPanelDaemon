@@ -61,12 +61,15 @@ public class EzPanelDaemon {
 	private static void startFtpServer(Config config, MySQLDatabase database) {
 		JsonObject ftpConfig = config.getConfig().getAsJsonObject("ftpServer");
 		boolean enabled = ftpConfig.get("enabled").getAsBoolean();
+		String ip = ftpConfig.get("ip").getAsString();
 		int port = ftpConfig.get("port").getAsInt();
+		int pasvMinPort = ftpConfig.get("pasvPortMin").getAsInt();
+		int pasvMaxPort = ftpConfig.get("pasvPortMax").getAsInt();
 		JsonObject ssl = ftpConfig.getAsJsonObject("ssl");
 		boolean sslEnabled = ssl.get("enabled").getAsBoolean();
 
 		if (enabled) {
-			MinecraftFtpServer.startFtpServer(port, database, sslEnabled, ssl);
+			MinecraftFtpServer.startFtpServer(ip, port, database, pasvMinPort, pasvMaxPort, sslEnabled, ssl);
 		}
 	}
 

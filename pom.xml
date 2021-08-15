@@ -37,9 +37,9 @@
             <version>2.8.6</version>
         </dependency>
         <dependency>
-            <groupId>com.guichaguri</groupId>
+            <groupId>com.github.elian1203</groupId>
             <artifactId>minimalftp</artifactId>
-            <version>1.0.6</version>
+            <version>1.0.6-pasv</version>
         </dependency>
     </dependencies>
 

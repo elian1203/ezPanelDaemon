@@ -7,10 +7,13 @@
   },
   "ftpServer": {
     "enabled": true,
+    "ip": "127.0.0.1",
     "port": 1337,
+    "pasvPortMin": 10000,
+    "pasvPortMax": 10050,
     "ssl": {
       "enabled": false,
-      "dir": "/home/minecraft/ezPanel/ssl",
+      "dir": "/home/minecraft/ezpanel/ssl",
       "pass": "ezP@nel_SSL_p@ssw0rd",
       "country": "US",
       "state": "California",

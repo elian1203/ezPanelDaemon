@@ -362,6 +362,21 @@ public class DaemonWebServer {
 			String response = gson.toJson(responseObject);
 			responseAndClose(httpExchange, response);
 		});
+		server.createContext("/servers/ftpport", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			JsonObject ftp = config.getConfig().get("ftpServer").getAsJsonObject();
+
+			boolean enabled = ftp.get("enabled").getAsBoolean();
+			int port = ftp.get("port").getAsInt();
+
+			String response = Integer.toString(enabled ? port : -1);
+			responseAndClose(httpExchange, response);
+		});
 		server.createContext("/users", httpExchange -> {
 			if (!authVerify(httpExchange)) {
 				httpExchange.sendResponseHeaders(401, 0);

@@ -20,11 +20,16 @@ public class MinecraftFtpServer {
 
 	private static FTPServer ftpServer;
 
-	public static void startFtpServer(int port, MySQLDatabase database, boolean sslEnabled, JsonObject ssl) {
+	public static void startFtpServer(String ip, int port, MySQLDatabase database, int pasvMinPort, int pasvMaxPort,
+	                                  boolean sslEnabled, JsonObject ssl) {
 		stopFtpServer();
 
 		UserAuthenticator auth = new UserAuthenticator(database);
 		ftpServer = new FTPServer(auth);
+
+		ftpServer.setPasvHost(ip);
+		ftpServer.setPasvMinPort(pasvMinPort);
+		ftpServer.setPasvMaxPort(pasvMaxPort);
 
 		if (sslEnabled) {
 			String dir = ssl.get("dir").getAsString(),
@@ -47,6 +52,7 @@ public class MinecraftFtpServer {
 			} catch (IOException e) {
 				System.out.println("FAILED TO START FTP SERVER - CHECK THAT YOU ARE RUNNING AS ROOT");
 				e.printStackTrace();
+			} catch (NullPointerException ignored) {
 			}
 		}).start();
 	}
