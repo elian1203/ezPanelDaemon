@@ -72,6 +72,14 @@ public class MySQLDatabase {
 		rs.next();
 		boolean propertiesExists = rs.getBoolean(1);
 
+		rs = statement.executeQuery("""
+				SELECT COUNT(*)
+				FROM information_schema.tables
+				WHERE table_schema = DATABASE()
+				  AND table_name = "Tasks\"""");
+		rs.next();
+		boolean tasksExists = rs.getBoolean(1);
+
 		if (!usersExists) {
 			statement.execute("""
 					CREATE TABLE Users
@@ -104,13 +112,16 @@ public class MySQLDatabase {
 					    serverJar         varchar(1000) NOT NULL,
 					    jarPathRelativeTo varchar(50)  NOT NULL,
 					    maximumMemory     int NULL,
-					    autostart         BOOLEAN DEFAULT true,
+					    autoStart         BOOLEAN DEFAULT true,
 					    ftp               BOOLEAN DEFAULT true,
 						ownerId           int NULL
 					);""");
-			statement.execute("""
-					INSERT INTO Servers(serverId, name, dateCreated, javaPath, serverJar, jarPathRelativeTo, maximumMemory)
-					VALUES (1, 'Default Server', CURRENT_DATE, '/bin/java', 'paper.jar', 'Server Base Directory', 2048);""");
+//			statement.execute("""
+//					INSERT INTO Servers(serverId, name, dateCreated, javaPath, serverJar, jarPathRelativeTo,
+//					maximumMemory)
+//					VALUES (1, 'Default Server', CURRENT_DATE, '/bin/java', 'paper-1.17.1-165.jar', 'Server Jar
+//					Folder', 2048);""");
+//			getServers().get(0).createServerFiles();
 		}
 
 		if (!propertiesExists) {
@@ -119,6 +130,17 @@ public class MySQLDatabase {
 					(
 					    property varchar(1000),
 					    value    varchar(1000)
+					);""");
+		}
+
+		if (!tasksExists) {
+			statement.execute("""
+					CREATE TABLE Tasks(
+					    taskId int PRIMARY KEY AUTO_INCREMENT,
+					    serverId int,
+					    command varchar(1000),
+					    days varchar(7),
+					    time varchar(10)
 					);""");
 		}
 	}
@@ -247,6 +269,47 @@ public class MySQLDatabase {
 		} catch (SQLException e) {
 			e.printStackTrace();
 			return -1;
+		}
+	}
+
+	public void updateServer(int serverId, String name, String javaPath, String serverJar, String jarPathRelativeTo,
+	                         int maximumMemory, boolean autoStart, int ownerId) {
+		try (Connection con = getConnection()) {
+			Statement statement = con.createStatement();
+
+			String sql = String.format("""
+							UPDATE Servers
+							SET
+							    name = '%s',
+							    javaPath = '%s',
+							    serverJar = '%s',
+							    jarPathRelativeTo = '%s',
+							    maximumMemory = %d,
+							    autoStart = %b,
+							    ownerId = %d
+							WHERE
+							    serverId = %d""",
+					name, javaPath, serverJar, jarPathRelativeTo, maximumMemory, autoStart, ownerId, serverId);
+			statement.execute(sql);
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public void setServerJar(int serverId, String serverJar) {
+		try (Connection con = getConnection()) {
+			Statement statement = con.createStatement();
+
+			String sql = String.format("""
+							UPDATE Servers
+							SET
+							    serverJar = '%s'
+							WHERE
+							    serverId = %d""",
+					serverJar, serverId);
+			statement.execute(sql);
+		} catch (SQLException e) {
+			e.printStackTrace();
 		}
 	}
 

@@ -5,11 +5,14 @@ import sun.misc.Signal;
 import tk.elian.ezpaneldaemon.database.MySQLDatabase;
 import tk.elian.ezpaneldaemon.ftp.MinecraftFtpServer;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.InputStreamReader;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Scanner;
+import java.util.TreeMap;
 
 public class EzPanelDaemon {
 
@@ -61,7 +64,6 @@ public class EzPanelDaemon {
 	private static void startFtpServer(Config config, MySQLDatabase database) {
 		JsonObject ftpConfig = config.getConfig().getAsJsonObject("ftpServer");
 		boolean enabled = ftpConfig.get("enabled").getAsBoolean();
-		String ip = ftpConfig.get("ip").getAsString();
 		int port = ftpConfig.get("port").getAsInt();
 		int pasvMinPort = ftpConfig.get("pasvPortMin").getAsInt();
 		int pasvMaxPort = ftpConfig.get("pasvPortMax").getAsInt();
@@ -69,7 +71,7 @@ public class EzPanelDaemon {
 		boolean sslEnabled = ssl.get("enabled").getAsBoolean();
 
 		if (enabled) {
-			MinecraftFtpServer.startFtpServer(ip, port, database, pasvMinPort, pasvMaxPort, sslEnabled, ssl);
+			MinecraftFtpServer.startFtpServer(port, database, pasvMinPort, pasvMaxPort, sslEnabled, ssl);
 		}
 	}
 
@@ -89,19 +91,32 @@ public class EzPanelDaemon {
 		}
 	}
 
-	public static int copy(InputStream input, OutputStream output)
-			throws IOException {
-		byte[] buffer = new byte[1024 * 4];
-		long count = 0;
-		int n = 0;
-		while (-1 != (n = input.read(buffer))) {
-			output.write(buffer, 0, n);
-			count += n;
+	public static Map<String, String> getJavaVersions() {
+		Map<String, String> versions = new HashMap<>();
+
+		try {
+			Process process = Runtime.getRuntime().exec("update-alternatives --display java");
+
+			BufferedReader reader =
+					new BufferedReader(new InputStreamReader(process.getInputStream()));
+			String line;
+
+			while ((line = reader.readLine()) != null) {
+				if (line.startsWith("/") && line.contains("/bin/java")) {
+					String javaPath = line.split(" ")[0];
+					String[] split = javaPath.split("/");
+					for (String s : split) {
+						if (s.startsWith("java-")) {
+							int releaseNumber = Integer.parseInt(s.split("-")[1]);
+							versions.put("Java " + releaseNumber, javaPath);
+						}
+					}
+				}
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
 		}
 
-		if (count > Integer.MAX_VALUE) {
-			return -1;
-		}
-		return (int) count;
+		return new TreeMap<>(versions);
 	}
 }

@@ -2,10 +2,11 @@ package tk.elian.ezpaneldaemon;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.google.gson.stream.JsonReader;
 
 import java.io.*;
 import java.net.URISyntaxException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 public class Config {
 
@@ -32,9 +33,7 @@ public class Config {
 				configFile.createNewFile();
 
 				InputStream configTemplate = getClass().getClassLoader().getResourceAsStream("config.json");
-				OutputStream newConfigFile = new FileOutputStream(configFile);
-
-				EzPanelDaemon.copy(configTemplate, newConfigFile);
+				Files.copy(configTemplate, Path.of(configFile.getAbsolutePath()));
 			}
 		} catch (IOException | URISyntaxException e) {
 			e.printStackTrace();

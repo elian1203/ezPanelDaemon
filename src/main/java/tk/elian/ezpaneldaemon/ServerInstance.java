@@ -1,13 +1,18 @@
 package tk.elian.ezpaneldaemon;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import tk.elian.ezpaneldaemon.database.MySQLDatabase;
 import tk.elian.ezpaneldaemon.database.ServerDatabaseDetails;
+import tk.elian.ezpaneldaemon.util.HttpUtil;
 
 import java.io.*;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -18,7 +23,7 @@ public class ServerInstance {
 	private final JsonObject config;
 
 	private final int serverId;
-	private final ServerDatabaseDetails databaseDetails;
+	private ServerDatabaseDetails databaseDetails;
 
 	private Process process;
 	private OutputStream commandOutput;
@@ -50,6 +55,19 @@ public class ServerInstance {
 
 	public String getServerJar() {
 		return databaseDetails.serverJar();
+	}
+
+	public String getServerJarPath() {
+		String serverJar = getServerJar();
+		String jarPathRelativeTo = getJarPathRelativeTo();
+		String serverPath = getServerPath();
+
+		return switch (jarPathRelativeTo) {
+			case "Absolute" -> serverJar;
+			case "Server Jar Folder" -> serverPath + "/jar/" + serverJar;
+			case "Server Base Directory" -> serverPath + "/" + serverJar;
+			default -> serverPath + "/" + serverJar;
+		};
 	}
 
 	public String getJarPathRelativeTo() {
@@ -84,15 +102,13 @@ public class ServerInstance {
 	public void start() {
 		if (!isRunning()) {
 			String java = getJavaPath();
-			String serverJar = getServerJar();
-			String jarPathRelativeTo = getJarPathRelativeTo();
+			String serverJar = getServerJarPath();
 			String serverPath = getServerPath();
 
-			serverJar = switch (jarPathRelativeTo) {
-				case "Absolute" -> serverJar;
-				case "Server Base Directory" -> serverPath + "/" + serverJar;
-				default -> serverPath + "/" + serverJar;
-			};
+			File jarFile = new File(serverJar);
+			if (!jarFile.getParentFile().isDirectory()) {
+				jarFile.getParentFile().mkdirs();
+			}
 
 			int maximumMemory = getMaximumMemory();
 			if (maximumMemory == 0)
@@ -118,7 +134,13 @@ public class ServerInstance {
 
 	public void stop() {
 		if (isRunning()) {
-			sendCommand("stop");
+			// try to use end command if using bungee or waterfall
+			String jarName = getServerJar().toLowerCase();
+			if (jarName.matches(".*(bungee|waterfall).*")) {
+				sendCommand("end");
+			} else {
+				sendCommand("stop");
+			}
 			commandOutput = null;
 		}
 	}
@@ -132,6 +154,7 @@ public class ServerInstance {
 				} catch (InterruptedException ignored) {
 				}
 			}
+			addLog("<span class=\"fw-bold\">[ezPanel]</span> Starting");
 			start();
 		}).start();
 	}
@@ -188,8 +211,30 @@ public class ServerInstance {
 		}
 	}
 
-	public double[] getMemoryAndCPUUsage() {
-		return new double[]{-1, -1};
+	public String getStatus() {
+		String status = "Offline";
+		if (!isRunning())
+			return status;
+
+		status = "Starting";
+
+		for (String log : consoleLogs) {
+			if (log != null) {
+				// [11:01:50 INFO]: Done (5.309s)! For help, type "help"
+				if (log.matches("\\[[0-9]{2}:[0-9]{2}:[0-9]{2} INFO]: Done \\([0-9]+(.[0-9]+)?s\\).*") // paper
+						|| log.matches("\\[[0-9]{2}:[0-9]{2}:[0-9]{2} INFO]: Listening on /.*")) { // waterfall
+					status = "Online";
+				} else if (log.equals("<span class=\"fw-bold\">[ezPanel]</span> Received stop command")
+						|| log.equals("<span class=\"fw-bold\">[ezPanel]</span> Received restart command")) {
+					status = "Stopping";
+				} else if (log.equals("<span class=\"fw-bold\">[ezPanel]</span> Starting")
+						|| log.equals("<span class=\"fw-bold\">[ezPanel]</span> Received start command")) {
+					status = "Starting";
+				}
+			}
+		}
+
+		return status;
 	}
 
 	private void listenOnConsole() {
@@ -224,23 +269,74 @@ public class ServerInstance {
 	}
 
 	public void createServerFiles() {
-		File serverFolder = new File(getServerPath());
-		serverFolder.mkdirs();
+		new Thread(() -> {
+			File serverFolder = new File(getServerPath());
+			serverFolder.mkdirs();
 
-		if (getServerJar().equals("paper.jar") && getJarPathRelativeTo().equals("Server Base Directory")) {
-			File jarFile = new File(getServerPath() + "/paper.jar");
+			if (getJarPathRelativeTo().equals("Absolute"))
+				return;
+
+			String jarName = getServerJar();
+			File jarFile = new File(getServerJarPath());
+
 			if (!jarFile.exists()) {
+				String[] split = jarName.split("-");
+				if (split.length != 3)
+					return;
+
+				String project = split[0];
+
+				if (!project.equals("paper") && !project.equals("waterfall"))
+					return;
+
+				String version = split[1], build = split[2].split("\\.")[0];
+
+				String urlString = String.format("https://papermc.io/api/v2/projects/%s/versions/%s/builds/" +
+						"%s/downloads/%s", project, version, build, jarName);
+
 				try {
+					if (!jarFile.getParentFile().isDirectory()) {
+						jarFile.getParentFile().mkdir();
+					}
+
 					jarFile.createNewFile();
 
-					InputStream input = getClass().getClassLoader().getResourceAsStream("paper-1.17.1-165.jar");
-					OutputStream output = new FileOutputStream(jarFile);
+					URL url = new URL(urlString);
+					InputStream in = url.openStream();
 
-					EzPanelDaemon.copy(input, output);
+					Files.copy(in, Paths.get(getServerJarPath()), StandardCopyOption.REPLACE_EXISTING);
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
 			}
+		}).start();
+	}
+
+	public void updateJar(MySQLDatabase database) {
+		String currentJar = getServerJar();
+		if (!currentJar.matches("(paper|waterfall)-[0-9a-zA-z.]+-[0-9]+"))
+			return;
+
+		String[] split = currentJar.split("-");
+		String project = split[0], version = split[1];
+
+		String url = String.format("https://papermc.io/api/v2/projects/%s/versions/%s", project, version);
+
+		try {
+			JsonObject obj = HttpUtil.httpGET(url).getAsJsonObject();
+
+			if (obj.has("error"))
+				return;
+
+			JsonArray builds = obj.getAsJsonArray("builds");
+			String build = builds.get(builds.size() - 1).getAsString();
+
+			String jar = project + "-" + version + "-" + build + ".jar";
+			database.setServerJar(getServerId(), jar);
+
+			createServerFiles();
+		} catch (IOException e) {
+			e.printStackTrace();
 		}
 	}
 
@@ -258,6 +354,10 @@ public class ServerInstance {
 		}
 
 		return serverInstance;
+	}
+
+	public void setDatabaseDetails(ServerDatabaseDetails databaseDetails) {
+		this.databaseDetails = databaseDetails;
 	}
 
 	public static ServerInstance getServerInstance(int serverId, Config config,

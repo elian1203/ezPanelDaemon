@@ -22,8 +22,8 @@ public class DaemonWebServer {
 
 	private final Gson gson;
 
-	private Config config;
-	private MySQLDatabase database;
+	private final Config config;
+	private final MySQLDatabase database;
 	private HttpServer server;
 
 	public DaemonWebServer(Config config, MySQLDatabase database) {
@@ -75,6 +75,39 @@ public class DaemonWebServer {
 			String response = gson.toJson(array);
 			responseAndClose(httpExchange, response);
 		});
+		server.createContext("/servers/editable", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			User user = getAuthenticatedUser(httpExchange);
+			ServerInstance inputServer = getMinecraftServer(httpExchange);
+
+			if (inputServer == null) {
+				List<ServerInstance> servers = database.getServers();
+				JsonArray array = new JsonArray();
+
+				for (ServerInstance serverInstance : servers) {
+					if (user.hasServerViewAccess(serverInstance)) {
+						JsonElement json = gson.toJsonTree(serverInstance, ServerInstance.class);
+						array.add(json);
+					}
+				}
+
+				String response = gson.toJson(array);
+				responseAndClose(httpExchange, response);
+			} else {
+				if (!user.hasServerEditAccess(inputServer)) {
+					httpExchange.sendResponseHeaders(403, 0);
+					httpExchange.close();
+				} else {
+					String response = gson.toJson(inputServer);
+					responseAndClose(httpExchange, response);
+				}
+			}
+		});
 		server.createContext("/servers/start", httpExchange -> {
 			if (!authVerify(httpExchange)) {
 				httpExchange.sendResponseHeaders(401, 0);
@@ -91,7 +124,7 @@ public class DaemonWebServer {
 				User user = getAuthenticatedUser(httpExchange);
 
 				if (!user.hasServerCommandAccess(minecraft)) {
-					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.sendResponseHeaders(403, 0);
 					httpExchange.close();
 					return;
 				}
@@ -103,7 +136,7 @@ public class DaemonWebServer {
 		});
 		server.createContext("/servers/stop", httpExchange -> {
 			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.sendResponseHeaders(403, 0);
 				httpExchange.close();
 				return;
 			}
@@ -117,7 +150,7 @@ public class DaemonWebServer {
 				User user = getAuthenticatedUser(httpExchange);
 
 				if (!user.hasServerCommandAccess(minecraft)) {
-					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.sendResponseHeaders(403, 0);
 					httpExchange.close();
 					return;
 				}
@@ -143,7 +176,7 @@ public class DaemonWebServer {
 				User user = getAuthenticatedUser(httpExchange);
 
 				if (!user.hasServerCommandAccess(minecraft)) {
-					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.sendResponseHeaders(403, 0);
 					httpExchange.close();
 					return;
 				}
@@ -169,7 +202,7 @@ public class DaemonWebServer {
 				User user = getAuthenticatedUser(httpExchange);
 
 				if (!user.hasServerCommandAccess(minecraft)) {
-					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.sendResponseHeaders(403, 0);
 					httpExchange.close();
 					return;
 				}
@@ -195,7 +228,7 @@ public class DaemonWebServer {
 				User user = getAuthenticatedUser(httpExchange);
 
 				if (!user.hasServerCommandAccess(minecraft)) {
-					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.sendResponseHeaders(403, 0);
 					httpExchange.close();
 					return;
 				}
@@ -221,7 +254,7 @@ public class DaemonWebServer {
 				User user = getAuthenticatedUser(httpExchange);
 
 				if (!user.hasServerViewAccess(minecraft)) {
-					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.sendResponseHeaders(403, 0);
 					httpExchange.close();
 					return;
 				}
@@ -273,7 +306,7 @@ public class DaemonWebServer {
 			User user = getAuthenticatedUser(httpExchange);
 
 			if (!user.hasCreateServerAccess()) {
-				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.sendResponseHeaders(403, 0);
 				httpExchange.close();
 				return;
 			}
@@ -312,6 +345,85 @@ public class DaemonWebServer {
 				httpExchange.close();
 			}
 		});
+		server.createContext("/servers/update", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			User user = getAuthenticatedUser(httpExchange);
+			ServerInstance minecraft = getMinecraftServer(httpExchange);
+
+			if (minecraft == null) {
+				httpExchange.sendResponseHeaders(500, 0);
+				httpExchange.close();
+				return;
+			}
+
+			if (!user.hasServerEditAccess(minecraft)) {
+				httpExchange.sendResponseHeaders(403, 0);
+				httpExchange.close();
+				return;
+			}
+
+			String input = getInputLine(httpExchange);
+
+			try {
+				JsonObject json = JsonParser.parseString(input).getAsJsonObject();
+
+				String name = json.get("name").getAsString();
+				String javaPath = json.get("javaPath").getAsString();
+				String serverJar = json.get("serverJar").getAsString();
+				String jarPathRelativeTo = json.get("jarPathRelativeTo").getAsString();
+				int maximumMemory = json.get("maximumMemory").getAsInt();
+				boolean autoStart = json.get("autoStart").getAsBoolean();
+				int ownerId = json.has("owner") ? json.get("owner").getAsInt() : -1;
+
+				String[] oldJarSplit = minecraft.getServerJar().split("-");
+				String[] newJarSplit = serverJar.split("-");
+
+				// don't update if saving settings. must hit jar update to update same jar version
+				if (oldJarSplit.length == 3 && newJarSplit.length == 3 && oldJarSplit[0].equals(newJarSplit[0]) &&
+						oldJarSplit[1].equals(newJarSplit[1])) {
+					serverJar = minecraft.getServerJar();
+				}
+
+				database.updateServer(minecraft.getServerId(), name, javaPath, serverJar, jarPathRelativeTo,
+						maximumMemory, autoStart, ownerId);
+				minecraft.setDatabaseDetails(database.getServerDetailsById(minecraft.getServerId()));
+
+				responseAndClose(httpExchange, "");
+				minecraft.createServerFiles();
+			} catch (Exception e) {
+				httpExchange.sendResponseHeaders(400, 0);
+				httpExchange.close();
+			}
+		});
+		server.createContext("/servers/updateJar", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			User user = getAuthenticatedUser(httpExchange);
+			ServerInstance minecraft = getMinecraftServer(httpExchange);
+
+			if (minecraft == null) {
+				httpExchange.sendResponseHeaders(500, 0);
+				httpExchange.close();
+				return;
+			}
+
+			if (!user.hasServerEditAccess(minecraft)) {
+				httpExchange.sendResponseHeaders(403, 0);
+				httpExchange.close();
+				return;
+			}
+
+			minecraft.updateJar(database);
+		});
 		server.createContext("/servers/delete", httpExchange -> {
 			if (!authVerify(httpExchange)) {
 				httpExchange.sendResponseHeaders(401, 0);
@@ -322,7 +434,7 @@ public class DaemonWebServer {
 			User user = getAuthenticatedUser(httpExchange);
 
 			if (!user.hasDeleteServerAccess()) {
-				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.sendResponseHeaders(403, 0);
 				httpExchange.close();
 				return;
 			}
@@ -352,6 +464,7 @@ public class DaemonWebServer {
 			responseObject.addProperty("defaultJar", config.getConfig().get("defaultJar").getAsString());
 			responseObject.addProperty("defaultMaximumMemory",
 					config.getConfig().get("defaultMaximumMemory").getAsInt());
+			responseObject.add("javaVersions", gson.toJsonTree(EzPanelDaemon.getJavaVersions()));
 
 			List<User> users = database.getUsers();
 			responseObject.add("users", gson.toJsonTree(users));
@@ -360,6 +473,16 @@ public class DaemonWebServer {
 			responseObject.add("servers", gson.toJsonTree(servers));
 
 			String response = gson.toJson(responseObject);
+			responseAndClose(httpExchange, response);
+		});
+		server.createContext("/server/javaVersions", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			String response = gson.toJson(EzPanelDaemon.getJavaVersions());
 			responseAndClose(httpExchange, response);
 		});
 		server.createContext("/servers/ftpport", httpExchange -> {
@@ -418,7 +541,7 @@ public class DaemonWebServer {
 			User authenticatedUser = getAuthenticatedUser(httpExchange);
 
 			if (!authenticatedUser.hasCreateUserAccess()) {
-				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.sendResponseHeaders(403, 0);
 				httpExchange.close();
 				return;
 			}
@@ -474,7 +597,7 @@ public class DaemonWebServer {
 				String password = obj.get("password").getAsString();
 
 				if (!authenticatedUser.hasModifyUserAccess() && authenticatedUser.userId() != userId) {
-					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.sendResponseHeaders(403, 0);
 					httpExchange.close();
 					return;
 				}
@@ -508,7 +631,7 @@ public class DaemonWebServer {
 				String email = obj.get("email").getAsString();
 
 				if (!authenticatedUser.hasModifyUserAccess() && authenticatedUser.userId() != userId) {
-					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.sendResponseHeaders(403, 0);
 					httpExchange.close();
 					return;
 				}
@@ -542,7 +665,7 @@ public class DaemonWebServer {
 				String permissions = obj.get("permissions").getAsString();
 
 				if (!authenticatedUser.hasModifyUserAccess() || authenticatedUser.userId() == userId) {
-					httpExchange.sendResponseHeaders(401, 0);
+					httpExchange.sendResponseHeaders(403, 0);
 					httpExchange.close();
 					return;
 				}
@@ -570,7 +693,7 @@ public class DaemonWebServer {
 			}
 
 			if (!authenticatedUser.hasModifyUserAccess() || authenticatedUser.userId() == userId) {
-				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.sendResponseHeaders(403, 0);
 				httpExchange.close();
 				return;
 			}

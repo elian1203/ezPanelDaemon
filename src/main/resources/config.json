@@ -3,11 +3,10 @@
     "host": "127.0.0.1",
     "database": "ezpanel_daemon",
     "user": "ezpanel_daemon",
-    "pass": "ezpanel_daemon"
+    "pass": "ezpanel_password"
   },
   "ftpServer": {
     "enabled": true,
-    "ip": "127.0.0.1",
     "port": 1337,
     "pasvPortMin": 10000,
     "pasvPortMax": 10050,
@@ -22,7 +21,7 @@
       "email": "admin@local.com"
     }
   },
-  "serverDirectory": "/home/minecraft/ezpanel/servers",
+  "serverDirectory": "/srv/ezpanel/servers",
   "javaPath": "/bin/java",
   "defaultJar": "paper.jar",
   "defaultMaximumMemory": 2048

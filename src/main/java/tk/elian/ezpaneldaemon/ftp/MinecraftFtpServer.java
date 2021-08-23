@@ -20,14 +20,13 @@ public class MinecraftFtpServer {
 
 	private static FTPServer ftpServer;
 
-	public static void startFtpServer(String ip, int port, MySQLDatabase database, int pasvMinPort, int pasvMaxPort,
+	public static void startFtpServer(int port, MySQLDatabase database, int pasvMinPort, int pasvMaxPort,
 	                                  boolean sslEnabled, JsonObject ssl) {
 		stopFtpServer();
 
 		UserAuthenticator auth = new UserAuthenticator(database);
 		ftpServer = new FTPServer(auth);
 
-		ftpServer.setPasvHost(ip);
 		ftpServer.setPasvMinPort(pasvMinPort);
 		ftpServer.setPasvMaxPort(pasvMaxPort);
 

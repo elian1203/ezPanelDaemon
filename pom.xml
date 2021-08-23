@@ -38,8 +38,8 @@
         </dependency>
         <dependency>
             <groupId>com.github.elian1203</groupId>
-            <artifactId>minimalftp</artifactId>
-            <version>1.0.6-pasv</version>
+            <artifactId>MinimalFTP</artifactId>
+            <version>1.0.6-pasvupgrades</version>
         </dependency>
     </dependencies>
 

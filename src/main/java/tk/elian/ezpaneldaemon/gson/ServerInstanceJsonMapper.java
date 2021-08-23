@@ -11,19 +11,25 @@ import java.lang.reflect.Type;
 import java.util.Map;
 
 public class ServerInstanceJsonMapper implements JsonSerializer<ServerInstance> {
+
+	private final Gson gson = new Gson();
+
 	@Override
 	public JsonElement serialize(ServerInstance serverInstance, Type type,
 	                             JsonSerializationContext jsonSerializationContext) {
 		JsonObject root = new JsonObject();
 
 		root.addProperty("id", serverInstance.getServerId());
-		root.addProperty("status", serverInstance.isRunning() ? "Online" : "Offline");
+		root.addProperty("status", serverInstance.getStatus());
 		root.addProperty("name", serverInstance.getName());
 		root.addProperty("dateCreated", serverInstance.getDateCreated());
+		root.addProperty("javaPath", serverInstance.getJavaPath());
 		root.addProperty("serverJar", serverInstance.getServerJar());
 		root.addProperty("jarPathRelativeTo", serverInstance.getJarPathRelativeTo());
 		root.addProperty("maximumMemory", serverInstance.getMaximumMemory());
 		root.addProperty("autoStart", serverInstance.isAutoStart());
+		root.addProperty("ftp", serverInstance.ftpEnabled());
+		root.addProperty("ownerId", serverInstance.getOwnerId());
 
 		double memory = serverInstance.getMemoryUsage();
 		root.addProperty("memory", memory);
