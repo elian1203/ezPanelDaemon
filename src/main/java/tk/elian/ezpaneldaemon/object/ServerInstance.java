@@ -1,4 +1,4 @@
-package tk.elian.ezpaneldaemon;
+package tk.elian.ezpaneldaemon.object;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -20,7 +20,7 @@ public class ServerInstance {
 
 	private static final Map<Integer, ServerInstance> cachedServers = new HashMap<>();
 
-	private final JsonObject config;
+	private final String serverDirectory;
 
 	private final int serverId;
 	private ServerDatabaseDetails databaseDetails;
@@ -31,10 +31,10 @@ public class ServerInstance {
 	private final String[] consoleLogs = new String[500];
 	int lineCount = 0;
 
-	private ServerInstance(int serverId, Config config, ServerDatabaseDetails databaseDetails) {
+	private ServerInstance(int serverId, ServerDatabaseDetails databaseDetails, String serverDirectory) {
 		this.serverId = serverId;
-		this.config = config.getConfig();
 		this.databaseDetails = databaseDetails;
+		this.serverDirectory = serverDirectory;
 	}
 
 	public int getServerId() {
@@ -91,8 +91,7 @@ public class ServerInstance {
 	}
 
 	public String getServerPath() {
-		String serversDirectory = config.get("serverDirectory").getAsString();
-		return serversDirectory + "/" + serverId;
+		return serverDirectory + "/" + serverId;
 	}
 
 	public boolean isRunning() {
@@ -112,7 +111,7 @@ public class ServerInstance {
 
 			int maximumMemory = getMaximumMemory();
 			if (maximumMemory == 0)
-				maximumMemory = config.get("defaultMaximumMemory").getAsInt();
+				maximumMemory = 2048;
 
 			String statement = String.format("%s -Xmx%dM -jar %s nogui", java, maximumMemory, serverJar);
 
@@ -296,7 +295,7 @@ public class ServerInstance {
 
 				try {
 					if (!jarFile.getParentFile().isDirectory()) {
-						jarFile.getParentFile().mkdir();
+						jarFile.getParentFile().mkdirs();
 					}
 
 					jarFile.createNewFile();
@@ -314,7 +313,7 @@ public class ServerInstance {
 
 	public void updateJar(MySQLDatabase database) {
 		String currentJar = getServerJar();
-		if (!currentJar.matches("(paper|waterfall)-[0-9a-zA-z.]+-[0-9]+"))
+		if (!currentJar.matches("(paper|waterfall)-[0-9a-zA-Z.]+-[0-9]+\\.jar"))
 			return;
 
 		String[] split = currentJar.split("-");
@@ -340,7 +339,7 @@ public class ServerInstance {
 		}
 	}
 
-	public static ServerInstance getServerInstance(int serverId, MySQLDatabase database, Config config) {
+	public static ServerInstance getServerInstance(int serverId, MySQLDatabase database) {
 		ServerInstance serverInstance = cachedServers.get(serverId);
 
 		if (serverInstance == null) {
@@ -349,7 +348,8 @@ public class ServerInstance {
 			if (databaseDetails == null)
 				return null;
 
-			serverInstance = new ServerInstance(serverId, config, databaseDetails);
+			String serverDirectory = database.getSetting("serverDirectory");
+			serverInstance = new ServerInstance(serverId, databaseDetails, serverDirectory);
 			cachedServers.put(serverId, serverInstance);
 		}
 
@@ -358,15 +358,6 @@ public class ServerInstance {
 
 	public void setDatabaseDetails(ServerDatabaseDetails databaseDetails) {
 		this.databaseDetails = databaseDetails;
-	}
-
-	public static ServerInstance getServerInstance(int serverId, Config config,
-	                                               ServerDatabaseDetails databaseDetails) {
-		ServerInstance serverInstance = cachedServers.getOrDefault(serverId, new ServerInstance(serverId, config,
-				databaseDetails));
-
-		cachedServers.put(serverId, serverInstance);
-		return serverInstance;
 	}
 
 	public static void removeCachedServer(int serverId) {

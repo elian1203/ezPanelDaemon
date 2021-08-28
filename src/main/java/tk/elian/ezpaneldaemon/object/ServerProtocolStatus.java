@@ -1,4 +1,4 @@
-package tk.elian.ezpaneldaemon;
+package tk.elian.ezpaneldaemon.object;
 
 import java.util.List;
 

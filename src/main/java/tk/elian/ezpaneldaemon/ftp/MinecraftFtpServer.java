@@ -6,8 +6,8 @@ import com.guichaguri.minimalftp.FTPServer;
 import com.guichaguri.minimalftp.api.IFileSystem;
 import com.guichaguri.minimalftp.api.IUserAuthenticator;
 import com.guichaguri.minimalftp.impl.NativeFileSystem;
-import tk.elian.ezpaneldaemon.ServerInstance;
-import tk.elian.ezpaneldaemon.User;
+import tk.elian.ezpaneldaemon.object.ServerInstance;
+import tk.elian.ezpaneldaemon.object.User;
 import tk.elian.ezpaneldaemon.database.MySQLDatabase;
 import tk.elian.ezpaneldaemon.util.SSLUtil;
 

@@ -6,6 +6,10 @@ import com.sun.net.httpserver.HttpServer;
 import org.codehaus.plexus.util.Base64;
 import tk.elian.ezpaneldaemon.database.MySQLDatabase;
 import tk.elian.ezpaneldaemon.gson.ServerInstanceJsonMapper;
+import tk.elian.ezpaneldaemon.object.ServerInstance;
+import tk.elian.ezpaneldaemon.object.Setting;
+import tk.elian.ezpaneldaemon.object.Task;
+import tk.elian.ezpaneldaemon.object.User;
 
 import java.io.File;
 import java.io.IOException;
@@ -14,6 +18,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Scanner;
@@ -22,14 +27,12 @@ public class DaemonWebServer {
 
 	private final Gson gson;
 
-	private final Config config;
 	private final MySQLDatabase database;
 	private HttpServer server;
 
-	public DaemonWebServer(Config config, MySQLDatabase database) {
+	public DaemonWebServer(MySQLDatabase database) {
 		this.gson =
 				new GsonBuilder().registerTypeAdapter(ServerInstance.class, new ServerInstanceJsonMapper()).create();
-		this.config = config;
 		this.database = database;
 	}
 
@@ -90,7 +93,7 @@ public class DaemonWebServer {
 				JsonArray array = new JsonArray();
 
 				for (ServerInstance serverInstance : servers) {
-					if (user.hasServerViewAccess(serverInstance)) {
+					if (user.hasServerViewAccess(serverInstance) && user.hasServerEditAccess(serverInstance)) {
 						JsonElement json = gson.toJsonTree(serverInstance, ServerInstance.class);
 						array.add(json);
 					}
@@ -278,8 +281,8 @@ public class DaemonWebServer {
 				return;
 			}
 
-			String serversDirectory = config.getConfig().get("serverDirectory").getAsString();
-			String iconPath = serversDirectory + "/" + serverId + "/server-icon.png";
+			String serverDirectory = database.getSetting("serverDirectory");
+			String iconPath = serverDirectory + "/" + serverId + "/server-icon.png";
 
 			File file = new File(iconPath);
 
@@ -330,7 +333,7 @@ public class DaemonWebServer {
 				if (serverId == -1) {
 					httpExchange.sendResponseHeaders(500, 0);
 				} else {
-					ServerInstance serverInstance = ServerInstance.getServerInstance(serverId, database, config);
+					ServerInstance serverInstance = ServerInstance.getServerInstance(serverId, database);
 
 					if (serverInstance != null) {
 						serverInstance.createServerFiles();
@@ -422,6 +425,7 @@ public class DaemonWebServer {
 				return;
 			}
 
+			responseAndClose(httpExchange, "");
 			minecraft.updateJar(database);
 		});
 		server.createContext("/servers/delete", httpExchange -> {
@@ -460,10 +464,6 @@ public class DaemonWebServer {
 			}
 
 			JsonObject responseObject = new JsonObject();
-			responseObject.addProperty("javaPath", config.getConfig().get("javaPath").getAsString());
-			responseObject.addProperty("defaultJar", config.getConfig().get("defaultJar").getAsString());
-			responseObject.addProperty("defaultMaximumMemory",
-					config.getConfig().get("defaultMaximumMemory").getAsInt());
 			responseObject.add("javaVersions", gson.toJsonTree(EzPanelDaemon.getJavaVersions()));
 
 			List<User> users = database.getUsers();
@@ -492,10 +492,9 @@ public class DaemonWebServer {
 				return;
 			}
 
-			JsonObject ftp = config.getConfig().get("ftpServer").getAsJsonObject();
 
-			boolean enabled = ftp.get("enabled").getAsBoolean();
-			int port = ftp.get("port").getAsInt();
+			boolean enabled = Boolean.parseBoolean(database.getSetting("ftpEnabled"));
+			int port = Integer.parseInt(database.getSetting("ftpPort"));
 
 			String response = Integer.toString(enabled ? port : -1);
 			responseAndClose(httpExchange, response);
@@ -701,6 +700,180 @@ public class DaemonWebServer {
 			database.deleteUser(userId);
 			responseAndClose(httpExchange, "");
 		});
+		server.createContext("/settings", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			User authenticatedUser = getAuthenticatedUser(httpExchange);
+
+			if (!authenticatedUser.hasGlobalSettingsAccess()) {
+				httpExchange.sendResponseHeaders(403, 0);
+				httpExchange.close();
+				return;
+			}
+
+			List<Setting> settings = database.getAllSettings();
+			settings.sort(Comparator.comparing(Setting::order));
+
+			String response = gson.toJson(settings);
+			responseAndClose(httpExchange, response);
+		});
+		server.createContext("/settings/update", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			User authenticatedUser = getAuthenticatedUser(httpExchange);
+
+			if (!authenticatedUser.hasGlobalSettingsAccess()) {
+				httpExchange.sendResponseHeaders(403, 0);
+				httpExchange.close();
+				return;
+			}
+
+			JsonObject obj = JsonParser.parseString(getInputLine(httpExchange)).getAsJsonObject();
+			obj.entrySet().forEach(e -> database.updateSetting(e.getKey(), e.getValue().getAsString()));
+		});
+		server.createContext("/settings/tasks", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			User user = getAuthenticatedUser(httpExchange);
+			ServerInstance minecraft = getMinecraftServer(httpExchange);
+
+			if (minecraft == null) {
+				httpExchange.sendResponseHeaders(500, 0);
+				httpExchange.close();
+				return;
+			}
+
+			if (!user.hasServerEditAccess(minecraft)) {
+				httpExchange.sendResponseHeaders(403, 0);
+				httpExchange.close();
+				return;
+			}
+
+			List<Task> tasks = database.getTasksForServer(minecraft.getServerId());
+
+			String response = gson.toJson(tasks);
+			responseAndClose(httpExchange, response);
+		});
+		server.createContext("/settings/tasks/add", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			try {
+				JsonObject obj = JsonParser.parseString(getInputLine(httpExchange)).getAsJsonObject();
+
+				int serverId = obj.get("serverId").getAsInt();
+				String command = obj.get("command").getAsString();
+				String days = obj.get("days").getAsString();
+				String time = obj.get("time").getAsString();
+
+				User user = getAuthenticatedUser(httpExchange);
+				ServerInstance minecraft = database.getServer(serverId);
+
+				if (minecraft == null) {
+					httpExchange.sendResponseHeaders(500, 0);
+					httpExchange.close();
+					return;
+				}
+
+				if (!user.hasServerEditAccess(minecraft)) {
+					httpExchange.sendResponseHeaders(403, 0);
+					httpExchange.close();
+					return;
+				}
+
+				database.addTask(serverId, command, days, time);
+
+				responseAndClose(httpExchange, "");
+			} catch (Exception e) {
+				httpExchange.sendResponseHeaders(500, 0);
+				httpExchange.close();
+				return;
+			}
+		});
+		server.createContext("/settings/tasks/update", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			try {
+				JsonObject obj = JsonParser.parseString(getInputLine(httpExchange)).getAsJsonObject();
+
+				int taskId = obj.get("taskId").getAsInt();
+				String command = obj.get("command").getAsString();
+				String days = obj.get("days").getAsString();
+				String time = obj.get("time").getAsString();
+
+				User user = getAuthenticatedUser(httpExchange);
+
+				Task task = database.getTaskById(taskId);
+				ServerInstance minecraft = database.getServer(task.serverId());
+
+				if (minecraft == null) {
+					httpExchange.sendResponseHeaders(500, 0);
+					httpExchange.close();
+					return;
+				}
+
+				if (!user.hasServerEditAccess(minecraft)) {
+					httpExchange.sendResponseHeaders(403, 0);
+					httpExchange.close();
+					return;
+				}
+
+				database.updateTask(taskId, command, days, time);
+
+				responseAndClose(httpExchange, "");
+			} catch (Exception e) {
+				httpExchange.sendResponseHeaders(500, 0);
+				httpExchange.close();
+				return;
+			}
+		});
+		server.createContext("/settings/tasks/delete", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			int taskId = getEndingId(httpExchange);
+			Task task = database.getTaskById(taskId);
+
+			User user = getAuthenticatedUser(httpExchange);
+			ServerInstance minecraft = database.getServer(task.serverId());
+
+			if (minecraft == null) {
+				httpExchange.sendResponseHeaders(500, 0);
+				httpExchange.close();
+				return;
+			}
+
+			if (!user.hasServerEditAccess(minecraft)) {
+				httpExchange.sendResponseHeaders(403, 0);
+				httpExchange.close();
+				return;
+			}
+
+			database.deleteTask(taskId);
+			responseAndClose(httpExchange, "");
+		});
 	}
 
 	private boolean authVerify(HttpExchange exchange) {
@@ -749,7 +922,7 @@ public class DaemonWebServer {
 		if (serverId == -1)
 			return null;
 		else
-			return ServerInstance.getServerInstance(serverId, database, config);
+			return ServerInstance.getServerInstance(serverId, database);
 	}
 
 	private void responseAndClose(HttpExchange httpExchange, String response) throws IOException {

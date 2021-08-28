@@ -4,25 +4,5 @@
     "database": "ezpanel_daemon",
     "user": "ezpanel_daemon",
     "pass": "ezpanel_password"
-  },
-  "ftpServer": {
-    "enabled": true,
-    "port": 1337,
-    "pasvPortMin": 10000,
-    "pasvPortMax": 10050,
-    "ssl": {
-      "enabled": false,
-      "dir": "/home/minecraft/ezpanel/ssl",
-      "pass": "ezP@nel_SSL_p@ssw0rd",
-      "country": "US",
-      "state": "California",
-      "locality": "Los Angelos",
-      "organization": "ezPanel",
-      "email": "admin@local.com"
-    }
-  },
-  "serverDirectory": "/srv/ezpanel/servers",
-  "javaPath": "/bin/java",
-  "defaultJar": "paper.jar",
-  "defaultMaximumMemory": 2048
+  }
 }

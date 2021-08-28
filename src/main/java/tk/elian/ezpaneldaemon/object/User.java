@@ -1,6 +1,10 @@
-package tk.elian.ezpaneldaemon;
+package tk.elian.ezpaneldaemon.object;
 
 public record User(int userId, String username, String email, String permissions) {
+
+	public boolean hasGlobalSettingsAccess() {
+		return permissions.equals("*");
+	}
 
 	public boolean hasCreateUserAccess() {
 		return permissions.equals("*");

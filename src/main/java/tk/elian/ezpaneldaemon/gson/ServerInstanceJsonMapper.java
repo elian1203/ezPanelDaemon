@@ -1,8 +1,8 @@
 package tk.elian.ezpaneldaemon.gson;
 
 import com.google.gson.*;
-import tk.elian.ezpaneldaemon.ServerInstance;
-import tk.elian.ezpaneldaemon.ServerProtocolStatus;
+import tk.elian.ezpaneldaemon.object.ServerInstance;
+import tk.elian.ezpaneldaemon.object.ServerProtocolStatus;
 import tk.elian.ezpaneldaemon.util.MOTDToHTML;
 import tk.elian.ezpaneldaemon.util.ServerProperties;
 import tk.elian.ezpaneldaemon.util.ServerProtocol;
@@ -49,9 +49,23 @@ public class ServerInstanceJsonMapper implements JsonSerializer<ServerInstance> 
 
 		ServerProtocolStatus protocolStatus = serverInstance.isRunning() ? ServerProtocol.fetchStatus("127.0.0.1",
 				port) : null;
-
-		root.addProperty("version", protocolStatus == null ? "$offline$" : protocolStatus.version());
 		root.addProperty("onlinePlayers", protocolStatus == null ? 0 : protocolStatus.onlinePlayers());
+
+		String version;
+
+		String[] jarSplit = serverInstance.getServerJar().split("-");
+		if (jarSplit.length == 3 && (jarSplit[0].matches("paper|waterfall"))) {
+			String project = jarSplit[0].substring(0, 1).toUpperCase() + jarSplit[0].substring(1);
+			version = project + " " + jarSplit[1];
+		} else {
+			if (protocolStatus == null) {
+				version = serverInstance.getServerJar();
+			} else {
+				version = protocolStatus.version();
+			}
+		}
+
+		root.addProperty("version", version);
 
 		JsonArray playerNames = new JsonArray();
 		if (protocolStatus != null) {

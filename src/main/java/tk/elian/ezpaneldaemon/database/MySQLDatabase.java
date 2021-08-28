@@ -1,9 +1,9 @@
 package tk.elian.ezpaneldaemon.database;
 
-import com.google.gson.JsonObject;
-import tk.elian.ezpaneldaemon.Config;
-import tk.elian.ezpaneldaemon.ServerInstance;
-import tk.elian.ezpaneldaemon.User;
+import tk.elian.ezpaneldaemon.object.ServerInstance;
+import tk.elian.ezpaneldaemon.object.Setting;
+import tk.elian.ezpaneldaemon.object.Task;
+import tk.elian.ezpaneldaemon.object.User;
 import tk.elian.ezpaneldaemon.util.Encryption;
 
 import java.sql.*;
@@ -14,25 +14,19 @@ import java.util.List;
 
 public class MySQLDatabase {
 
-	private final Config config;
-	private final JsonObject mysqlConfig;
+	private final String dbHost, dbName, dbUser, dbPass;
 
-	public MySQLDatabase(Config config) {
-		this.config = config;
-		mysqlConfig = config.getConfig().getAsJsonObject("mysql");
+	public MySQLDatabase(String dbHost, String dbName, String dbUser, String dbPass) {
+		this.dbHost = dbHost;
+		this.dbName = dbName;
+		this.dbUser = dbUser;
+		this.dbPass = dbPass;
 	}
 
 
 	private Connection getConnection() throws SQLException {
-		String connectionString = String.format("jdbc:mysql://%s/%s",
-				mysqlConfig.get("host").getAsString(),
-				mysqlConfig.get("database").getAsString()
-		);
-
-		String user = mysqlConfig.get("user").getAsString(),
-				pass = mysqlConfig.get("pass").getAsString();
-
-		return DriverManager.getConnection(connectionString, user, pass);
+		String connectionString = String.format("jdbc:mysql://%s/%s", dbHost, dbName);
+		return DriverManager.getConnection(connectionString, dbUser, dbPass);
 	}
 
 	public boolean testDatabaseConnection() {
@@ -68,7 +62,7 @@ public class MySQLDatabase {
 				SELECT COUNT(*)
 				FROM information_schema.tables
 				WHERE table_schema = DATABASE()
-				  AND table_name = "GlobalProperties\"""");
+				  AND table_name = "Settings\"""");
 		rs.next();
 		boolean propertiesExists = rs.getBoolean(1);
 
@@ -126,11 +120,24 @@ public class MySQLDatabase {
 
 		if (!propertiesExists) {
 			statement.execute("""
-					CREATE TABLE GlobalProperties
+					CREATE TABLE Settings
 					(
-					    property varchar(1000),
-					    value    varchar(1000)
+					    property    varchar(1000),
+					    value       varchar(1000),
+					    hidden      boolean,
+					    label       varchar(50),
+					    description varchar(300),
+					    sortOrder       int
 					);""");
+			statement.execute("""
+					INSERT INTO Settings
+					VALUES
+						 ('databaseVersion', '1', true, null, null, 0)
+						,('ftpEnabled', 'true', false, 'FTP Enabled', 'Whether FTP is globally enabled. This overrides server FTP toggles', 10)
+						,('ftpPort', '1337', false, 'FTP Port', 'FTP server port. Must be port forwarded', 20)
+						,('pasvPortMin', '10000', false, 'PASV Port Minimum', 'Minimum port for PASV FTP protocol. This must be portforwarded up to the max port below', 30)
+						,('pasvPortMax', '10050', false, 'PASV Port Maximum', 'Maximum port for PASV FTP protocol', 40)
+						,('serverDirectory', '/srv/ezpanel/servers', false, 'Servers Directory', 'Where the Minecraft servers are stored', 50)""");
 		}
 
 		if (!tasksExists) {
@@ -174,7 +181,7 @@ public class MySQLDatabase {
 
 			while (rs.next()) {
 				int serverId = rs.getInt("serverId");
-				ServerInstance minecraft = ServerInstance.getServerInstance(serverId, this, config);
+				ServerInstance minecraft = ServerInstance.getServerInstance(serverId, this);
 				servers.add(minecraft);
 			}
 		} catch (SQLException e) {
@@ -420,6 +427,141 @@ public class MySQLDatabase {
 					DELETE FROM Users
 					WHERE
 						userId = %d""", userId);
+			con.createStatement().execute(sql);
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public String getSetting(String property) {
+		try (Connection con = getConnection()) {
+			String sql = String.format("""
+					SELECT * FROM Settings
+					WHERE
+						property = '%s'""", property);
+			ResultSet rs = con.createStatement().executeQuery(sql);
+			rs.next();
+			return rs.getString(2);
+		} catch (SQLException e) {
+			e.printStackTrace();
+			return "";
+		}
+	}
+
+	public List<Setting> getAllSettings() {
+		List<Setting> settings = new ArrayList<>();
+
+		try (Connection con = getConnection()) {
+			String sql = "SELECT * FROM Settings WHERE hidden = false";
+			ResultSet rs = con.createStatement().executeQuery(sql);
+
+			while (rs.next()) {
+				String property = rs.getString("property");
+				String value = rs.getString("value");
+				String label = rs.getString("label");
+				String description = rs.getString("description");
+				int order = rs.getInt("sortOrder");
+
+				settings.add(new Setting(property, value, label, description, order));
+			}
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+
+		return settings;
+	}
+
+	public void updateSetting(String property, String value) {
+		try (Connection con = getConnection()) {
+			String sql = String.format("""
+					UPDATE Settings
+					SET
+						value = '%s'
+					WHERE
+						property = '%s'""", value, property);
+			con.createStatement().execute(sql);
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public Task getTaskById(int taskId) {
+		try (Connection con = getConnection()) {
+			String sql = "SELECT * FROM Tasks where taskId = " + taskId;
+			ResultSet rs = con.createStatement().executeQuery(sql);
+
+			if (rs.next()) {
+				int serverId = rs.getInt("serverId");
+				String command = rs.getString("command");
+				String days = rs.getString("days");
+				String time = rs.getString("time");
+
+				return new Task(taskId, serverId, command, days, time);
+			}
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+
+		return null;
+	}
+
+	public List<Task> getTasksForServer(int serverId) {
+		List<Task> tasks = new ArrayList<>();
+
+		try (Connection con = getConnection()) {
+			String sql = "SELECT * FROM Tasks where serverId = " + serverId;
+			ResultSet rs = con.createStatement().executeQuery(sql);
+
+			while (rs.next()) {
+				int taskId = rs.getInt("taskId");
+				String command = rs.getString("command");
+				String days = rs.getString("days");
+				String time = rs.getString("time");
+
+				tasks.add(new Task(taskId, serverId, command, days, time));
+			}
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+
+		return tasks;
+	}
+
+	public void addTask(int serverId, String command, String days, String time) {
+		try (Connection con = getConnection()) {
+			String sql = String.format("""
+					INSERT INTO Tasks
+					(serverId, command, days, time)
+					VALUES
+					    %d,
+					    '%s',
+					    '%s',
+					    '%s'""", serverId, command, days, time);
+			con.createStatement().execute(sql);
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public void updateTask(int taskId, String command, String days, String time) {
+		try (Connection con = getConnection()) {
+			String sql = String.format("""
+					UPDATE Tasks
+					SET
+					    command = '%s',
+					    days = '%s',
+					    time = '%s'
+					WHERE
+						taskId = %d""", command, days, time, taskId);
+			con.createStatement().execute(sql);
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public void deleteTask(int taskId) {
+		try (Connection con = getConnection()) {
+			String sql = "DELETE FROM Tasks WHERE taskId = " + taskId;
 			con.createStatement().execute(sql);
 		} catch (SQLException e) {
 			e.printStackTrace();
