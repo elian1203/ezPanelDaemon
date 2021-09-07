@@ -12,6 +12,10 @@ import tk.elian.ezpaneldaemon.object.ServerInstance;
 import tk.elian.ezpaneldaemon.object.Setting;
 import tk.elian.ezpaneldaemon.object.Task;
 import tk.elian.ezpaneldaemon.object.User;
+import tk.elian.ezpaneldaemon.object.handler.AuthenticatedHandler;
+import tk.elian.ezpaneldaemon.object.handler.AuthenticatedJsonHandler;
+import tk.elian.ezpaneldaemon.object.handler.AuthenticatedServerHandler;
+import tk.elian.ezpaneldaemon.util.ServerProperties;
 
 import java.io.File;
 import java.io.IOException;
@@ -20,10 +24,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Optional;
-import java.util.Scanner;
+import java.util.*;
 
 public class WebService {
 
@@ -54,27 +55,20 @@ public class WebService {
 
 	private void createServer() {
 		try {
-			server = HttpServer.create(new InetSocketAddress(12521), 0);
+			int port = Integer.parseInt(database.getSetting("webServerPort"));
+			server = HttpServer.create(new InetSocketAddress(port), 0);
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
 	}
 
 	private void registerContexts() {
-		server.createContext("/servers", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-				return;
-			}
-
-			User user = getAuthenticatedUser(httpExchange);
-
+		createAuthenticatedContext(server, "/servers", (httpExchange, authenticatedUser) -> {
 			List<ServerInstance> servers = database.getServers();
 			JsonArray array = new JsonArray();
 
 			for (ServerInstance serverInstance : servers) {
-				if (user.hasServerViewAccess(serverInstance)) {
+				if (authenticatedUser.hasServerViewAccess(serverInstance)) {
 					JsonElement json = gson.toJsonTree(serverInstance, ServerInstance.class);
 					array.add(json);
 				}
@@ -83,14 +77,7 @@ public class WebService {
 			String response = gson.toJson(array);
 			responseAndClose(httpExchange, response);
 		});
-		server.createContext("/servers/editable", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-				return;
-			}
-
-			User user = getAuthenticatedUser(httpExchange);
+		createAuthenticatedContext(server, "/servers/editable", (httpExchange, authenticatedUser) -> {
 			ServerInstance inputServer = getMinecraftServer(httpExchange);
 
 			if (inputServer == null) {
@@ -98,7 +85,8 @@ public class WebService {
 				JsonArray array = new JsonArray();
 
 				for (ServerInstance serverInstance : servers) {
-					if (user.hasServerViewAccess(serverInstance) && user.hasServerEditAccess(serverInstance)) {
+					if (authenticatedUser.hasServerViewAccess(serverInstance)
+							&& authenticatedUser.hasServerEditAccess(serverInstance)) {
 						JsonElement json = gson.toJsonTree(serverInstance, ServerInstance.class);
 						array.add(json);
 					}
@@ -107,182 +95,85 @@ public class WebService {
 				String response = gson.toJson(array);
 				responseAndClose(httpExchange, response);
 			} else {
-				if (!user.hasServerEditAccess(inputServer)) {
-					httpExchange.sendResponseHeaders(403, 0);
-					httpExchange.close();
+				if (!authenticatedUser.hasServerEditAccess(inputServer)) {
+					responseAndClose(httpExchange, 403, "");
 				} else {
 					String response = gson.toJson(inputServer);
 					responseAndClose(httpExchange, response);
 				}
 			}
 		});
-		server.createContext("/servers/start", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
+		createAuthenticatedServerContext(server, "/servers/start", (httpExchange, authenticatedUser, minecraft) -> {
+			if (!authenticatedUser.hasServerCommandAccess(minecraft)) {
+				responseAndClose(httpExchange, 403, "");
 				return;
 			}
 
-			ServerInstance minecraft = getMinecraftServer(httpExchange);
-
-			if (minecraft == null) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
-			} else {
-				User user = getAuthenticatedUser(httpExchange);
-
-				if (!user.hasServerCommandAccess(minecraft)) {
-					httpExchange.sendResponseHeaders(403, 0);
-					httpExchange.close();
-					return;
-				}
-
-				minecraft.addLog("<span class=\"fw-bold\">[ezPanel]</span> Received start command");
-				minecraft.start();
-				responseAndClose(httpExchange, "");
-			}
+			minecraft.addLog("<span class=\"fw-bold\">[ezPanel]</span> Received start command");
+			minecraft.start();
+			responseAndClose(httpExchange, "");
 		});
-		server.createContext("/servers/stop", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(403, 0);
-				httpExchange.close();
+		createAuthenticatedServerContext(server, "/servers/stop", (httpExchange, authenticatedUser, minecraft) -> {
+			if (!authenticatedUser.hasServerCommandAccess(minecraft)) {
+				responseAndClose(httpExchange, 403, "");
 				return;
 			}
 
-			ServerInstance minecraft = getMinecraftServer(httpExchange);
-
-			if (minecraft == null) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
-			} else {
-				User user = getAuthenticatedUser(httpExchange);
-
-				if (!user.hasServerCommandAccess(minecraft)) {
-					httpExchange.sendResponseHeaders(403, 0);
-					httpExchange.close();
-					return;
-				}
-
-				minecraft.addLog("<span class=\"fw-bold\">[ezPanel]</span> Received stop command");
-				minecraft.stop();
-				responseAndClose(httpExchange, "");
-			}
+			minecraft.addLog("<span class=\"fw-bold\">[ezPanel]</span> Received stop command");
+			minecraft.stop();
+			responseAndClose(httpExchange, "");
 		});
-		server.createContext("/servers/restart", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
+		createAuthenticatedServerContext(server, "/servers/restart", (httpExchange, authenticatedUser, minecraft) -> {
+			if (!authenticatedUser.hasServerCommandAccess(minecraft)) {
+				responseAndClose(httpExchange, 403, "");
 				return;
 			}
 
-			ServerInstance minecraft = getMinecraftServer(httpExchange);
-
-			if (minecraft == null) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
-			} else {
-				User user = getAuthenticatedUser(httpExchange);
-
-				if (!user.hasServerCommandAccess(minecraft)) {
-					httpExchange.sendResponseHeaders(403, 0);
-					httpExchange.close();
-					return;
-				}
-
-				minecraft.addLog("<span class=\"fw-bold\">[ezPanel]</span> Received restart command");
-				minecraft.restart();
-				responseAndClose(httpExchange, "");
-			}
+			minecraft.addLog("<span class=\"fw-bold\">[ezPanel]</span> Received restart command");
+			minecraft.restart();
+			responseAndClose(httpExchange, "");
 		});
-		server.createContext("/servers/kill", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
+		createAuthenticatedServerContext(server, "/servers/kill", (httpExchange, authenticatedUser, minecraft) -> {
+			if (!authenticatedUser.hasServerCommandAccess(minecraft)) {
+				responseAndClose(httpExchange, 403, "");
 				return;
 			}
 
-			ServerInstance minecraft = getMinecraftServer(httpExchange);
-
-			if (minecraft == null) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
-			} else {
-				User user = getAuthenticatedUser(httpExchange);
-
-				if (!user.hasServerCommandAccess(minecraft)) {
-					httpExchange.sendResponseHeaders(403, 0);
-					httpExchange.close();
-					return;
-				}
-
-				minecraft.addLog("<span class=\"fw-bold\">[ezPanel]</span> Received kill command");
-				minecraft.kill();
-				responseAndClose(httpExchange, "");
-			}
+			minecraft.addLog("<span class=\"fw-bold\">[ezPanel]</span> Received kill command");
+			minecraft.kill();
+			responseAndClose(httpExchange, "");
 		});
-		server.createContext("/servers/sendCommand", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
+		createAuthenticatedServerContext(server, "/servers/sendCommand",
+				(httpExchange, authenticatedUser, minecraft) -> {
+					if (!authenticatedUser.hasServerCommandAccess(minecraft)) {
+						responseAndClose(httpExchange, 403, "");
+						return;
+					}
+
+					String command = getInputLine(httpExchange);
+					minecraft.sendCommand(command);
+					responseAndClose(httpExchange, "");
+				});
+		createAuthenticatedServerContext(server, "/servers/details", (httpExchange, authenticatedUser, minecraft) -> {
+			if (!authenticatedUser.hasServerViewAccess(minecraft)) {
+				responseAndClose(httpExchange, 403, "");
 				return;
 			}
 
-			ServerInstance minecraft = getMinecraftServer(httpExchange);
+			JsonObject obj = gson.toJsonTree(minecraft).getAsJsonObject();
 
-			if (minecraft == null) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
-			} else {
-				User user = getAuthenticatedUser(httpExchange);
-
-				if (!user.hasServerCommandAccess(minecraft)) {
-					httpExchange.sendResponseHeaders(403, 0);
-					httpExchange.close();
-					return;
-				}
-
-				String command = getInputLine(httpExchange);
-				minecraft.sendCommand(command);
-				responseAndClose(httpExchange, "");
-			}
-		});
-		server.createContext("/servers/details", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-				return;
+			if (!authenticatedUser.hasServerConsoleAccess(minecraft)) {
+				obj.remove("logs");
 			}
 
-			ServerInstance minecraft = getMinecraftServer(httpExchange);
-
-			if (minecraft == null) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
-			} else {
-				User user = getAuthenticatedUser(httpExchange);
-
-				if (!user.hasServerViewAccess(minecraft)) {
-					httpExchange.sendResponseHeaders(403, 0);
-					httpExchange.close();
-					return;
-				}
-
-				JsonObject obj = gson.toJsonTree(minecraft).getAsJsonObject();
-
-				if (!user.hasServerConsoleAccess(minecraft)) {
-					obj.remove("logs");
-				}
-
-				String response = gson.toJson(obj);
-				responseAndClose(httpExchange, response);
-			}
+			String response = gson.toJson(obj);
+			responseAndClose(httpExchange, response);
 		});
 		server.createContext("/servers/icon", httpExchange -> {
 			int serverId = getEndingId(httpExchange);
 
 			if (serverId == -1) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
+				responseAndClose(httpExchange, 400, "");
 				return;
 			}
 
@@ -304,110 +195,72 @@ public class WebService {
 
 			httpExchange.close();
 		});
-		server.createContext("/servers/create", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
+		createAuthenticatedJsonContext(server, "/servers/create", (httpExchange, authenticatedUser, json) -> {
+			if (!authenticatedUser.hasCreateServerAccess()) {
+				responseAndClose(httpExchange, 403, "");
 				return;
 			}
 
-			User user = getAuthenticatedUser(httpExchange);
+			String name = json.get("name").getAsString();
+			String javaPath = json.get("javaPath").getAsString();
+			String serverJar = json.get("serverJar").getAsString();
+			String jarPathRelativeTo = json.get("jarPathRelativeTo").getAsString();
+			int maximumMemory = json.get("maximumMemory").getAsInt();
+			boolean autoStart = json.get("autoStart").getAsBoolean();
+			int ownerId = json.has("owner") ? json.get("owner").getAsInt() : -1;
 
-			if (!user.hasCreateServerAccess()) {
-				httpExchange.sendResponseHeaders(403, 0);
-				httpExchange.close();
-				return;
-			}
+			int serverId = database.createServer(name, javaPath, serverJar, jarPathRelativeTo, maximumMemory,
+					autoStart, ownerId);
 
-			String input = getInputLine(httpExchange);
+			if (serverId == -1) {
+				responseAndClose(httpExchange, 500, "");
+			} else {
+				ServerInstance serverInstance = ServerInstance.getServerInstance(serverId, database);
 
-			try {
-				JsonObject json = JsonParser.parseString(input).getAsJsonObject();
-
-				String name = json.get("name").getAsString();
-				String javaPath = json.get("javaPath").getAsString();
-				String serverJar = json.get("serverJar").getAsString();
-				String jarPathRelativeTo = json.get("jarPathRelativeTo").getAsString();
-				int maximumMemory = json.get("maximumMemory").getAsInt();
-				boolean autoStart = json.get("autoStart").getAsBoolean();
-				int ownerId = json.has("owner") ? json.get("owner").getAsInt() : -1;
-
-				int serverId = database.createServer(name, javaPath, serverJar, jarPathRelativeTo, maximumMemory,
-						autoStart, ownerId);
-
-				if (serverId == -1) {
-					httpExchange.sendResponseHeaders(500, 0);
-				} else {
-					ServerInstance serverInstance = ServerInstance.getServerInstance(serverId, database);
-
-					if (serverInstance != null) {
-						serverInstance.createServerFiles();
-					}
-
-					httpExchange.sendResponseHeaders(200, 0);
+				if (serverInstance != null) {
+					serverInstance.createServerFiles();
 				}
 
-				httpExchange.close();
-			} catch (Exception e) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
+				responseAndClose(httpExchange, 200, "");
 			}
 		});
-		server.createContext("/servers/update", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-				return;
-			}
-
-			User user = getAuthenticatedUser(httpExchange);
+		createAuthenticatedJsonContext(server, "/servers/update", (httpExchange, authenticatedUser, json) -> {
 			ServerInstance minecraft = getMinecraftServer(httpExchange);
 
 			if (minecraft == null) {
-				httpExchange.sendResponseHeaders(500, 0);
-				httpExchange.close();
+				responseAndClose(httpExchange, 500, "");
 				return;
 			}
 
-			if (!user.hasServerEditAccess(minecraft)) {
-				httpExchange.sendResponseHeaders(403, 0);
-				httpExchange.close();
+			if (!authenticatedUser.hasServerEditAccess(minecraft)) {
+				responseAndClose(httpExchange, 403, "");
 				return;
 			}
 
-			String input = getInputLine(httpExchange);
+			String name = json.get("name").getAsString();
+			String javaPath = json.get("javaPath").getAsString();
+			String serverJar = json.get("serverJar").getAsString();
+			String jarPathRelativeTo = json.get("jarPathRelativeTo").getAsString();
+			int maximumMemory = json.get("maximumMemory").getAsInt();
+			boolean autoStart = json.get("autoStart").getAsBoolean();
+			boolean ftp = json.get("ftp").getAsBoolean();
+			int ownerId = json.has("owner") ? json.get("owner").getAsInt() : -1;
 
-			try {
-				JsonObject json = JsonParser.parseString(input).getAsJsonObject();
+			String[] oldJarSplit = minecraft.getServerJar().split("-");
+			String[] newJarSplit = serverJar.split("-");
 
-				String name = json.get("name").getAsString();
-				String javaPath = json.get("javaPath").getAsString();
-				String serverJar = json.get("serverJar").getAsString();
-				String jarPathRelativeTo = json.get("jarPathRelativeTo").getAsString();
-				int maximumMemory = json.get("maximumMemory").getAsInt();
-				boolean autoStart = json.get("autoStart").getAsBoolean();
-				boolean ftp = json.get("ftp").getAsBoolean();
-				int ownerId = json.has("owner") ? json.get("owner").getAsInt() : -1;
-
-				String[] oldJarSplit = minecraft.getServerJar().split("-");
-				String[] newJarSplit = serverJar.split("-");
-
-				// don't update if saving settings. must hit jar update to update same jar version
-				if (oldJarSplit.length == 3 && newJarSplit.length == 3 && oldJarSplit[0].equals(newJarSplit[0]) &&
-						oldJarSplit[1].equals(newJarSplit[1])) {
-					serverJar = minecraft.getServerJar();
-				}
-
-				database.updateServer(minecraft.getServerId(), name, javaPath, serverJar, jarPathRelativeTo,
-						maximumMemory, autoStart, ftp, ownerId);
-				minecraft.setDatabaseDetails(database.getServerDetailsById(minecraft.getServerId()));
-
-				responseAndClose(httpExchange, "");
-				minecraft.createServerFiles();
-			} catch (Exception e) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
+			// don't update if saving settings. must hit jar update to update same jar version
+			if (oldJarSplit.length == 3 && newJarSplit.length == 3 && oldJarSplit[0].equals(newJarSplit[0]) &&
+					oldJarSplit[1].equals(newJarSplit[1])) {
+				serverJar = minecraft.getServerJar();
 			}
+
+			database.updateServer(minecraft.getServerId(), name, javaPath, serverJar, jarPathRelativeTo,
+					maximumMemory, autoStart, ftp, ownerId);
+			minecraft.setDatabaseDetails(database.getServerDetailsById(minecraft.getServerId()));
+
+			responseAndClose(httpExchange, "");
+			minecraft.createServerFiles();
 		});
 		server.createContext("/servers/updateJar", httpExchange -> {
 			if (!authVerify(httpExchange)) {
@@ -566,6 +419,13 @@ public class WebService {
 				String email = obj.get("email").getAsString();
 				String password = obj.get("password").getAsString();
 				String permissions = obj.get("permissions").getAsString();
+
+				if (database.getUser(username) != null) {
+					// user already exists
+					httpExchange.sendResponseHeaders(400, 0);
+					httpExchange.close();
+					return;
+				}
 
 				boolean success = database.createUser(username, email, password, permissions);
 
@@ -896,6 +756,123 @@ public class WebService {
 			database.deleteTask(taskId);
 			responseAndClose(httpExchange, "");
 		});
+		server.createContext("/settings/properties", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			int serverId = getEndingId(httpExchange);
+
+			User user = getAuthenticatedUser(httpExchange);
+			ServerInstance minecraft = database.getServer(serverId);
+
+			if (minecraft == null) {
+				httpExchange.sendResponseHeaders(500, 0);
+				httpExchange.close();
+				return;
+			}
+
+			if (!user.hasServerEditAccess(minecraft)) {
+				httpExchange.sendResponseHeaders(403, 0);
+				httpExchange.close();
+				return;
+			}
+
+			String pathToProperties = minecraft.getServerPath() + "/server.properties";
+			Map<String, String> properties = ServerProperties.getServerProperties(pathToProperties);
+
+			responseAndClose(httpExchange, gson.toJson(properties));
+		});
+		server.createContext("/settings/properties/update", httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			User user = getAuthenticatedUser(httpExchange);
+
+			JsonObject obj = JsonParser.parseString(getInputLine(httpExchange)).getAsJsonObject();
+			int serverId = obj.get("serverId").getAsInt();
+
+			ServerInstance minecraft = database.getServer(serverId);
+
+			if (minecraft == null) {
+				httpExchange.sendResponseHeaders(500, 0);
+				httpExchange.close();
+				return;
+			}
+
+			if (!user.hasServerEditAccess(minecraft)) {
+				httpExchange.sendResponseHeaders(403, 0);
+				httpExchange.close();
+				return;
+			}
+
+			String pathToProperties = minecraft.getServerPath() + "/server.properties";
+
+			obj.entrySet().forEach(e -> ServerProperties.setServerProperty(pathToProperties, e.getKey(),
+					e.getValue().getAsString()));
+			responseAndClose(httpExchange, "");
+		});
+	}
+
+	private void createAuthenticatedContext(HttpServer server, String endPoint, AuthenticatedHandler handler) {
+		server.createContext(endPoint, httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			User user = getAuthenticatedUser(httpExchange);
+			handler.handle(httpExchange, user);
+		});
+	}
+
+	private void createAuthenticatedServerContext(HttpServer server, String endPoint,
+	                                              AuthenticatedServerHandler handler) {
+		server.createContext(endPoint, httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				responseAndClose(httpExchange, 401, "");
+				return;
+			}
+
+			User user = getAuthenticatedUser(httpExchange);
+
+			int serverId = getEndingId(httpExchange);
+			ServerInstance minecraft = database.getServer(serverId);
+
+			if (minecraft == null) {
+				responseAndClose(httpExchange, 400, "");
+				return;
+			}
+
+			handler.handle(httpExchange, user, minecraft);
+		});
+	}
+
+	private void createAuthenticatedJsonContext(HttpServer server, String endPoint, AuthenticatedJsonHandler handler) {
+		server.createContext(endPoint, httpExchange -> {
+			if (!authVerify(httpExchange)) {
+				httpExchange.sendResponseHeaders(401, 0);
+				httpExchange.close();
+				return;
+			}
+
+			User user = getAuthenticatedUser(httpExchange);
+			JsonElement element = JsonParser.parseString(getInputLine(httpExchange));
+
+			if (element == null || element.isJsonNull()) {
+				httpExchange.sendResponseHeaders(400, 0);
+				httpExchange.close();
+				return;
+			}
+
+			handler.handle(httpExchange, user, element.getAsJsonObject());
+		});
 	}
 
 	private boolean authVerify(HttpExchange exchange) {
@@ -945,6 +922,17 @@ public class WebService {
 			return null;
 		else
 			return ServerInstance.getServerInstance(serverId, database);
+	}
+
+	private void responseAndClose(HttpExchange httpExchange, int code, String response) throws IOException {
+		byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+		httpExchange.sendResponseHeaders(code, bytes.length);
+
+		OutputStream output = httpExchange.getResponseBody();
+		output.write(bytes);
+		output.flush();
+
+		httpExchange.close();
 	}
 
 	private void responseAndClose(HttpExchange httpExchange, String response) throws IOException {

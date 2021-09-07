@@ -100,6 +100,8 @@ public class ServerInstance {
 
 	public void start() {
 		if (!isRunning()) {
+			acceptEula();
+
 			String java = getJavaPath();
 			String serverJar = getServerJarPath();
 			String serverPath = getServerPath();
@@ -335,6 +337,25 @@ public class ServerInstance {
 			setDatabaseDetails(database.getServerDetailsById(serverId));
 
 			createServerFiles();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+
+	private void acceptEula() {
+		File eulaFile = new File(getServerPath(), "eula.txt");
+
+		if (eulaFile.exists()) {
+			eulaFile.delete();
+		}
+
+		try {
+			eulaFile.createNewFile();
+			PrintWriter writer = new PrintWriter(new FileOutputStream(eulaFile));
+
+			writer.write("eula=true\n");
+			writer.flush();
+			writer.close();
 		} catch (IOException e) {
 			e.printStackTrace();
 		}

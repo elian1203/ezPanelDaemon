@@ -133,6 +133,7 @@ public class MySQLDatabase {
 					INSERT INTO Settings
 					VALUES
 						 ('databaseVersion', '1', true, null, null, 0)
+						,('webServerPort', '12521', true, null, null, 0)
 						,('ftpEnabled', 'true', false, 'FTP Enabled', 'Whether FTP is globally enabled. This overrides server FTP toggles', 10)
 						,('ftpPort', '1337', false, 'FTP Port', 'FTP server port. Must be port forwarded', 20)
 						,('pasvPortMin', '10000', false, 'PASV Port Minimum', 'Minimum port for PASV FTP protocol. This must be portforwarded up to the max port below', 30)

@@ -25,6 +25,9 @@ public class ServerProperties {
 		File file = new File(pathToProperties);
 
 		if (properties != null) {
+			if (properties.containsKey(property) && properties.getProperty(property).equals(value))
+				return;
+
 			properties.setProperty(property, value);
 
 			try {
@@ -33,23 +36,25 @@ public class ServerProperties {
 				fileOutput.flush();
 			} catch (IOException ignored) {
 			}
-		} else {
-			try {
-				// file does not exist
-				properties = loadDefaultProperties();
-				if (properties != null) {
-					file.createNewFile();
-
-					FileOutputStream fileOutput = new FileOutputStream(file);
-					properties.store(fileOutput, "Created by ezPanel");
-
-					properties.setProperty(property, value);
-					fileOutput.flush();
-				}
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
 		}
+		// as of now don't want to create the file if it does not already exist
+//		} else {
+//			try {
+//				// file does not exist
+//				properties = loadDefaultProperties();
+//				if (properties != null) {
+//					file.createNewFile();
+//
+//					FileOutputStream fileOutput = new FileOutputStream(file);
+//					properties.store(fileOutput, "Created by ezPanel");
+//
+//					properties.setProperty(property, value);
+//					fileOutput.flush();
+//				}
+//			} catch (IOException e) {
+//				e.printStackTrace();
+//			}
+//		}
 	}
 
 	private static Properties loadPropertiesFile(String pathToProperties) {
