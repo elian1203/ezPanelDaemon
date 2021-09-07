@@ -12,9 +12,9 @@ import tk.elian.ezpaneldaemon.object.ServerInstance;
 import tk.elian.ezpaneldaemon.object.Setting;
 import tk.elian.ezpaneldaemon.object.Task;
 import tk.elian.ezpaneldaemon.object.User;
-import tk.elian.ezpaneldaemon.object.handler.AuthenticatedHandler;
-import tk.elian.ezpaneldaemon.object.handler.AuthenticatedJsonHandler;
-import tk.elian.ezpaneldaemon.object.handler.AuthenticatedServerHandler;
+import tk.elian.ezpaneldaemon.service.handler.AuthenticatedHandler;
+import tk.elian.ezpaneldaemon.service.handler.AuthenticatedJsonHandler;
+import tk.elian.ezpaneldaemon.service.handler.AuthenticatedServerHandler;
 import tk.elian.ezpaneldaemon.util.ServerProperties;
 
 import java.io.File;
@@ -75,7 +75,7 @@ public class WebService {
 			}
 
 			String response = gson.toJson(array);
-			responseAndClose(httpExchange, response);
+			respondAndClose(httpExchange, 200, response);
 		});
 		createAuthenticatedContext(server, "/servers/editable", (httpExchange, authenticatedUser) -> {
 			ServerInstance inputServer = getMinecraftServer(httpExchange);
@@ -93,70 +93,70 @@ public class WebService {
 				}
 
 				String response = gson.toJson(array);
-				responseAndClose(httpExchange, response);
+				respondAndClose(httpExchange, 200, response);
 			} else {
 				if (!authenticatedUser.hasServerEditAccess(inputServer)) {
-					responseAndClose(httpExchange, 403, "");
+					respondAndClose(httpExchange, 403, "");
 				} else {
 					String response = gson.toJson(inputServer);
-					responseAndClose(httpExchange, response);
+					respondAndClose(httpExchange, 200, response);
 				}
 			}
 		});
 		createAuthenticatedServerContext(server, "/servers/start", (httpExchange, authenticatedUser, minecraft) -> {
 			if (!authenticatedUser.hasServerCommandAccess(minecraft)) {
-				responseAndClose(httpExchange, 403, "");
+				respondAndClose(httpExchange, 403, "");
 				return;
 			}
 
 			minecraft.addLog("<span class=\"fw-bold\">[ezPanel]</span> Received start command");
 			minecraft.start();
-			responseAndClose(httpExchange, "");
+			respondAndClose(httpExchange, 200, "");
 		});
 		createAuthenticatedServerContext(server, "/servers/stop", (httpExchange, authenticatedUser, minecraft) -> {
 			if (!authenticatedUser.hasServerCommandAccess(minecraft)) {
-				responseAndClose(httpExchange, 403, "");
+				respondAndClose(httpExchange, 403, "");
 				return;
 			}
 
 			minecraft.addLog("<span class=\"fw-bold\">[ezPanel]</span> Received stop command");
 			minecraft.stop();
-			responseAndClose(httpExchange, "");
+			respondAndClose(httpExchange, 200, "");
 		});
 		createAuthenticatedServerContext(server, "/servers/restart", (httpExchange, authenticatedUser, minecraft) -> {
 			if (!authenticatedUser.hasServerCommandAccess(minecraft)) {
-				responseAndClose(httpExchange, 403, "");
+				respondAndClose(httpExchange, 403, "");
 				return;
 			}
 
 			minecraft.addLog("<span class=\"fw-bold\">[ezPanel]</span> Received restart command");
 			minecraft.restart();
-			responseAndClose(httpExchange, "");
+			respondAndClose(httpExchange, 200, "");
 		});
 		createAuthenticatedServerContext(server, "/servers/kill", (httpExchange, authenticatedUser, minecraft) -> {
 			if (!authenticatedUser.hasServerCommandAccess(minecraft)) {
-				responseAndClose(httpExchange, 403, "");
+				respondAndClose(httpExchange, 403, "");
 				return;
 			}
 
 			minecraft.addLog("<span class=\"fw-bold\">[ezPanel]</span> Received kill command");
 			minecraft.kill();
-			responseAndClose(httpExchange, "");
+			respondAndClose(httpExchange, 200, "");
 		});
 		createAuthenticatedServerContext(server, "/servers/sendCommand",
 				(httpExchange, authenticatedUser, minecraft) -> {
 					if (!authenticatedUser.hasServerCommandAccess(minecraft)) {
-						responseAndClose(httpExchange, 403, "");
+						respondAndClose(httpExchange, 403, "");
 						return;
 					}
 
 					String command = getInputLine(httpExchange);
 					minecraft.sendCommand(command);
-					responseAndClose(httpExchange, "");
+					respondAndClose(httpExchange, 200, "");
 				});
 		createAuthenticatedServerContext(server, "/servers/details", (httpExchange, authenticatedUser, minecraft) -> {
 			if (!authenticatedUser.hasServerViewAccess(minecraft)) {
-				responseAndClose(httpExchange, 403, "");
+				respondAndClose(httpExchange, 403, "");
 				return;
 			}
 
@@ -167,13 +167,13 @@ public class WebService {
 			}
 
 			String response = gson.toJson(obj);
-			responseAndClose(httpExchange, response);
+			respondAndClose(httpExchange, 200, response);
 		});
 		server.createContext("/servers/icon", httpExchange -> {
 			int serverId = getEndingId(httpExchange);
 
 			if (serverId == -1) {
-				responseAndClose(httpExchange, 400, "");
+				respondAndClose(httpExchange, 400, "");
 				return;
 			}
 
@@ -197,7 +197,7 @@ public class WebService {
 		});
 		createAuthenticatedJsonContext(server, "/servers/create", (httpExchange, authenticatedUser, json) -> {
 			if (!authenticatedUser.hasCreateServerAccess()) {
-				responseAndClose(httpExchange, 403, "");
+				respondAndClose(httpExchange, 403, "");
 				return;
 			}
 
@@ -213,7 +213,7 @@ public class WebService {
 					autoStart, ownerId);
 
 			if (serverId == -1) {
-				responseAndClose(httpExchange, 500, "");
+				respondAndClose(httpExchange, 500, "");
 			} else {
 				ServerInstance serverInstance = ServerInstance.getServerInstance(serverId, database);
 
@@ -221,19 +221,19 @@ public class WebService {
 					serverInstance.createServerFiles();
 				}
 
-				responseAndClose(httpExchange, 200, "");
+				respondAndClose(httpExchange, 200, "");
 			}
 		});
 		createAuthenticatedJsonContext(server, "/servers/update", (httpExchange, authenticatedUser, json) -> {
 			ServerInstance minecraft = getMinecraftServer(httpExchange);
 
 			if (minecraft == null) {
-				responseAndClose(httpExchange, 500, "");
+				respondAndClose(httpExchange, 500, "");
 				return;
 			}
 
 			if (!authenticatedUser.hasServerEditAccess(minecraft)) {
-				responseAndClose(httpExchange, 403, "");
+				respondAndClose(httpExchange, 403, "");
 				return;
 			}
 
@@ -259,69 +259,31 @@ public class WebService {
 					maximumMemory, autoStart, ftp, ownerId);
 			minecraft.setDatabaseDetails(database.getServerDetailsById(minecraft.getServerId()));
 
-			responseAndClose(httpExchange, "");
+			respondAndClose(httpExchange, 200, "");
 			minecraft.createServerFiles();
 		});
-		server.createContext("/servers/updateJar", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
+		createAuthenticatedServerContext(server, "/servers/updateJar",
+				(httpExchange, authenticatedUser, minecraft) -> {
+					if (!authenticatedUser.hasServerEditAccess(minecraft)) {
+						respondAndClose(httpExchange, 403, "");
+						return;
+					}
+
+					respondAndClose(httpExchange, 200, "");
+					minecraft.updateJar(database);
+				});
+		createAuthenticatedServerContext(server, "/servers/delete", (httpExchange, authenticatedUser, minecraft) -> {
+			if (!authenticatedUser.hasDeleteServerAccess()) {
+				respondAndClose(httpExchange, 403, "");
 				return;
 			}
 
-			User user = getAuthenticatedUser(httpExchange);
-			ServerInstance minecraft = getMinecraftServer(httpExchange);
+			database.deleteServer(minecraft.getServerId());
+			ServerInstance.removeCachedServer(minecraft.getServerId());
 
-			if (minecraft == null) {
-				httpExchange.sendResponseHeaders(500, 0);
-				httpExchange.close();
-				return;
-			}
-
-			if (!user.hasServerEditAccess(minecraft)) {
-				httpExchange.sendResponseHeaders(403, 0);
-				httpExchange.close();
-				return;
-			}
-
-			responseAndClose(httpExchange, "");
-			minecraft.updateJar(database);
+			respondAndClose(httpExchange, 200, "");
 		});
-		server.createContext("/servers/delete", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-				return;
-			}
-
-			User user = getAuthenticatedUser(httpExchange);
-
-			if (!user.hasDeleteServerAccess()) {
-				httpExchange.sendResponseHeaders(403, 0);
-				httpExchange.close();
-				return;
-			}
-
-			int serverId = getEndingId(httpExchange);
-
-			if (serverId == -1) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
-				return;
-			}
-
-			database.deleteServer(serverId);
-			ServerInstance.removeCachedServer(serverId);
-
-			responseAndClose(httpExchange, "");
-		});
-		server.createContext("/servers/create/config", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-				return;
-			}
-
+		createAuthenticatedContext(server, "/servers/create/config", (httpExchange, authenticatedUser) -> {
 			JsonObject responseObject = new JsonObject();
 			responseObject.add("javaVersions", gson.toJsonTree(EzPanelDaemon.getJavaVersions()));
 
@@ -332,239 +294,106 @@ public class WebService {
 			responseObject.add("servers", gson.toJsonTree(servers));
 
 			String response = gson.toJson(responseObject);
-			responseAndClose(httpExchange, response);
+			respondAndClose(httpExchange, 200, response);
 		});
-		server.createContext("/server/javaVersions", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-				return;
-			}
-
+		createAuthenticatedContext(server, "/server/javaVersions", (httpExchange, authenticatedUser) -> {
 			String response = gson.toJson(EzPanelDaemon.getJavaVersions());
-			responseAndClose(httpExchange, response);
+			respondAndClose(httpExchange, 200, response);
 		});
-		server.createContext("/servers/ftpport", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-				return;
-			}
-
-
+		createAuthenticatedContext(server, "/server/ftpport", (httpExchange, authenticatedUser) -> {
 			boolean enabled = Boolean.parseBoolean(database.getSetting("ftpEnabled"));
 			int port = Integer.parseInt(database.getSetting("ftpPort"));
 
 			String response = Integer.toString(enabled ? port : -1);
-			responseAndClose(httpExchange, response);
+			respondAndClose(httpExchange, 200, response);
 		});
-		server.createContext("/users", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-				return;
-			}
-
+		createAuthenticatedContext(server, "/users", (httpExchange, authenticatedUser) -> {
 			List<User> users = database.getUsers();
 
 			String response = gson.toJson(users);
-			responseAndClose(httpExchange, response);
+			respondAndClose(httpExchange, response);
 		});
-		server.createContext("/users/login", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-				return;
-			}
-
-			responseAndClose(httpExchange, "");
+		createAuthenticatedContext(server, "/users/login", (httpExchange, authenticatedUser) -> {
+			respondAndClose(httpExchange, 200, "");
 		});
-		server.createContext("/users/self", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-				return;
-			}
-
-			User user = getAuthenticatedUser(httpExchange);
-			responseAndClose(httpExchange, gson.toJson(user));
+		createAuthenticatedContext(server, "/users/self", (httpExchange, authenticatedUser) -> {
+			respondAndClose(httpExchange, 200, gson.toJson(authenticatedUser));
 		});
-		server.createContext("/users/create", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-				return;
-			}
-
-			User authenticatedUser = getAuthenticatedUser(httpExchange);
-
+		createAuthenticatedJsonContext(server, "/users/create", (httpExchange, authenticatedUser, json) -> {
 			if (!authenticatedUser.hasCreateUserAccess()) {
 				httpExchange.sendResponseHeaders(403, 0);
 				httpExchange.close();
 				return;
 			}
 
-			JsonElement inputElement = JsonParser.parseString(getInputLine(httpExchange));
-
-			if (!inputElement.isJsonObject()) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
-				return;
-			}
-
 			try {
-				JsonObject obj = inputElement.getAsJsonObject();
-
-				String username = obj.get("username").getAsString();
-				String email = obj.get("email").getAsString();
-				String password = obj.get("password").getAsString();
-				String permissions = obj.get("permissions").getAsString();
+				String username = json.get("username").getAsString();
+				String email = json.get("email").getAsString();
+				String password = json.get("password").getAsString();
+				String permissions = json.get("permissions").getAsString();
 
 				if (database.getUser(username) != null) {
 					// user already exists
-					httpExchange.sendResponseHeaders(400, 0);
-					httpExchange.close();
+					respondAndClose(httpExchange, 400, "");
 					return;
 				}
 
 				boolean success = database.createUser(username, email, password, permissions);
 
 				if (success) {
-					responseAndClose(httpExchange, "");
+					respondAndClose(httpExchange, 200, "");
 				} else {
-					httpExchange.sendResponseHeaders(500, 0);
-					httpExchange.close();
+					respondAndClose(httpExchange, 500, "");
 				}
 			} catch (Exception ignored) {
 			}
 		});
-		server.createContext("/users/set/pass", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
+		createAuthenticatedJsonContext(server, "/users/set/pass", (httpExchange, authenticatedUser, json) -> {
+			int userId = json.get("userId").getAsInt();
+			String password = json.get("password").getAsString();
+
+			if (!authenticatedUser.hasModifyUserAccess() && authenticatedUser.userId() != userId) {
+				respondAndClose(httpExchange, 403, "");
 				return;
 			}
 
-			User authenticatedUser = getAuthenticatedUser(httpExchange);
-
-			JsonElement inputElement = JsonParser.parseString(getInputLine(httpExchange));
-
-			if (!inputElement.isJsonObject()) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
-				return;
-			}
-
-			try {
-				JsonObject obj = inputElement.getAsJsonObject();
-
-				int userId = obj.get("userId").getAsInt();
-				String password = obj.get("password").getAsString();
-
-				if (!authenticatedUser.hasModifyUserAccess() && authenticatedUser.userId() != userId) {
-					httpExchange.sendResponseHeaders(403, 0);
-					httpExchange.close();
-					return;
-				}
-
-				database.setUserPassword(userId, password);
-				responseAndClose(httpExchange, "");
-			} catch (Exception ignored) {
-			}
+			database.setUserPassword(userId, password);
+			respondAndClose(httpExchange, 200, "");
 		});
-		server.createContext("/users/set/email", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
+		createAuthenticatedJsonContext(server, "/users/set/email", (httpExchange, authenticatedUser, json) -> {
+			int userId = json.get("userId").getAsInt();
+			String email = json.get("email").getAsString();
+
+			if (!authenticatedUser.hasModifyUserAccess() && authenticatedUser.userId() != userId) {
+				respondAndClose(httpExchange, 403, "");
 				return;
 			}
 
-			User authenticatedUser = getAuthenticatedUser(httpExchange);
-
-			JsonElement inputElement = JsonParser.parseString(getInputLine(httpExchange));
-
-			if (!inputElement.isJsonObject()) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
-				return;
-			}
-
-			try {
-				JsonObject obj = inputElement.getAsJsonObject();
-
-				int userId = obj.get("userId").getAsInt();
-				String email = obj.get("email").getAsString();
-
-				if (!authenticatedUser.hasModifyUserAccess() && authenticatedUser.userId() != userId) {
-					httpExchange.sendResponseHeaders(403, 0);
-					httpExchange.close();
-					return;
-				}
-
-				database.setUserEmail(userId, email);
-				responseAndClose(httpExchange, "");
-			} catch (Exception ignored) {
-			}
+			database.setUserEmail(userId, email);
+			respondAndClose(httpExchange, 200, "");
 		});
-		server.createContext("/users/set/permissions", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-				return;
-			}
-
-			User authenticatedUser = getAuthenticatedUser(httpExchange);
-
-			JsonElement inputElement = JsonParser.parseString(getInputLine(httpExchange));
-
-			if (!inputElement.isJsonObject()) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
-				return;
-			}
-
-			try {
-				JsonObject obj = inputElement.getAsJsonObject();
-
-				int userId = obj.get("userId").getAsInt();
-				String permissions = obj.get("permissions").getAsString();
-
-				if (!authenticatedUser.hasModifyUserAccess() || authenticatedUser.userId() == userId) {
-					httpExchange.sendResponseHeaders(403, 0);
-					httpExchange.close();
-					return;
-				}
-
-				database.setUserPermissions(userId, permissions);
-				responseAndClose(httpExchange, "");
-			} catch (Exception ignored) {
-			}
-		});
-		server.createContext("/users/delete", httpExchange -> {
-			if (!authVerify(httpExchange)) {
-				httpExchange.sendResponseHeaders(401, 0);
-				httpExchange.close();
-				return;
-			}
-
-			User authenticatedUser = getAuthenticatedUser(httpExchange);
-
-			int userId = getEndingId(httpExchange);
-
-			if (userId == -1) {
-				httpExchange.sendResponseHeaders(400, 0);
-				httpExchange.close();
-				return;
-			}
+		createAuthenticatedJsonContext(server, "/users/set/permissions", (httpExchange, authenticatedUser, json) -> {
+			int userId = json.get("userId").getAsInt();
+			String permissions = json.get("permissions").getAsString();
 
 			if (!authenticatedUser.hasModifyUserAccess() || authenticatedUser.userId() == userId) {
-				httpExchange.sendResponseHeaders(403, 0);
-				httpExchange.close();
+				respondAndClose(httpExchange, 403, "");
+				return;
+			}
+
+			database.setUserPermissions(userId, permissions);
+			respondAndClose(httpExchange, 200, "");
+		});
+		createAuthenticatedContext(server, "/users/delete", (httpExchange, authenticatedUser) -> {
+			int userId = getEndingId(httpExchange);
+
+			if (!authenticatedUser.hasModifyUserAccess() || authenticatedUser.userId() == userId) {
+				respondAndClose(httpExchange, 403, "");
 				return;
 			}
 
 			database.deleteUser(userId);
-			responseAndClose(httpExchange, "");
+			respondAndClose(httpExchange, 200, "");
 		});
 		server.createContext("/settings", httpExchange -> {
 			if (!authVerify(httpExchange)) {
@@ -585,7 +414,7 @@ public class WebService {
 			settings.sort(Comparator.comparing(Setting::order));
 
 			String response = gson.toJson(settings);
-			responseAndClose(httpExchange, response);
+			respondAndClose(httpExchange, response);
 		});
 		server.createContext("/settings/update", httpExchange -> {
 			if (!authVerify(httpExchange)) {
@@ -617,7 +446,7 @@ public class WebService {
 				database.updateSetting(e.getKey(), e.getValue().getAsString());
 			});
 
-			responseAndClose(httpExchange, "");
+			respondAndClose(httpExchange, "");
 		});
 		server.createContext("/settings/tasks", httpExchange -> {
 			if (!authVerify(httpExchange)) {
@@ -644,7 +473,7 @@ public class WebService {
 			List<Task> tasks = database.getTasksForServer(minecraft.getServerId());
 
 			String response = gson.toJson(tasks);
-			responseAndClose(httpExchange, response);
+			respondAndClose(httpExchange, response);
 		});
 		server.createContext("/settings/tasks/create", httpExchange -> {
 			if (!authVerify(httpExchange)) {
@@ -679,7 +508,7 @@ public class WebService {
 
 				database.addTask(serverId, command, days, time, repeat);
 
-				responseAndClose(httpExchange, "");
+				respondAndClose(httpExchange, "");
 			} catch (Exception e) {
 				httpExchange.sendResponseHeaders(500, 0);
 				httpExchange.close();
@@ -721,7 +550,7 @@ public class WebService {
 
 				database.updateTask(taskId, command, days, time, repeat);
 
-				responseAndClose(httpExchange, "");
+				respondAndClose(httpExchange, "");
 			} catch (Exception e) {
 				httpExchange.sendResponseHeaders(500, 0);
 				httpExchange.close();
@@ -754,7 +583,7 @@ public class WebService {
 			}
 
 			database.deleteTask(taskId);
-			responseAndClose(httpExchange, "");
+			respondAndClose(httpExchange, "");
 		});
 		server.createContext("/settings/properties", httpExchange -> {
 			if (!authVerify(httpExchange)) {
@@ -783,7 +612,7 @@ public class WebService {
 			String pathToProperties = minecraft.getServerPath() + "/server.properties";
 			Map<String, String> properties = ServerProperties.getServerProperties(pathToProperties);
 
-			responseAndClose(httpExchange, gson.toJson(properties));
+			respondAndClose(httpExchange, gson.toJson(properties));
 		});
 		server.createContext("/settings/properties/update", httpExchange -> {
 			if (!authVerify(httpExchange)) {
@@ -815,7 +644,7 @@ public class WebService {
 
 			obj.entrySet().forEach(e -> ServerProperties.setServerProperty(pathToProperties, e.getKey(),
 					e.getValue().getAsString()));
-			responseAndClose(httpExchange, "");
+			respondAndClose(httpExchange, "");
 		});
 	}
 
@@ -836,7 +665,7 @@ public class WebService {
 	                                              AuthenticatedServerHandler handler) {
 		server.createContext(endPoint, httpExchange -> {
 			if (!authVerify(httpExchange)) {
-				responseAndClose(httpExchange, 401, "");
+				respondAndClose(httpExchange, 401, "");
 				return;
 			}
 
@@ -846,7 +675,7 @@ public class WebService {
 			ServerInstance minecraft = database.getServer(serverId);
 
 			if (minecraft == null) {
-				responseAndClose(httpExchange, 400, "");
+				respondAndClose(httpExchange, 400, "");
 				return;
 			}
 
@@ -871,7 +700,11 @@ public class WebService {
 				return;
 			}
 
-			handler.handle(httpExchange, user, element.getAsJsonObject());
+			try {
+				handler.handle(httpExchange, user, element.getAsJsonObject());
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
 		});
 	}
 
@@ -924,7 +757,7 @@ public class WebService {
 			return ServerInstance.getServerInstance(serverId, database);
 	}
 
-	private void responseAndClose(HttpExchange httpExchange, int code, String response) throws IOException {
+	private void respondAndClose(HttpExchange httpExchange, int code, String response) throws IOException {
 		byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
 		httpExchange.sendResponseHeaders(code, bytes.length);
 
@@ -935,15 +768,8 @@ public class WebService {
 		httpExchange.close();
 	}
 
-	private void responseAndClose(HttpExchange httpExchange, String response) throws IOException {
-		byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
-		httpExchange.sendResponseHeaders(200, bytes.length);
-
-		OutputStream output = httpExchange.getResponseBody();
-		output.write(bytes);
-		output.flush();
-
-		httpExchange.close();
+	private void respondAndClose(HttpExchange httpExchange, String response) throws IOException {
+		respondAndClose(httpExchange, 200, response);
 	}
 
 	private String getInputLine(HttpExchange exchange) {

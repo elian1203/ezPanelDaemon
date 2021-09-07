@@ -31,6 +31,8 @@ public class ServerInstance {
 	private final String[] consoleLogs = new String[500];
 	int lineCount = 0;
 
+	private String serverStatus = "Offline";
+
 	private ServerInstance(int serverId, ServerDatabaseDetails databaseDetails, String serverDirectory) {
 		this.serverId = serverId;
 		this.databaseDetails = databaseDetails;
@@ -100,6 +102,8 @@ public class ServerInstance {
 
 	public void start() {
 		if (!isRunning()) {
+			serverStatus = "Starting";
+
 			acceptEula();
 
 			String java = getJavaPath();
@@ -135,6 +139,7 @@ public class ServerInstance {
 
 	public void stop() {
 		if (isRunning()) {
+			serverStatus = "Stopping";
 			// try to use end command if using bungee or waterfall
 			String jarName = getServerJar().toLowerCase();
 			if (jarName.matches(".*(bungee|waterfall).*")) {
@@ -162,6 +167,7 @@ public class ServerInstance {
 
 	public void kill() {
 		process.destroy();
+		serverStatus = "Offline";
 	}
 
 	public String[] getConsoleLogs() {
@@ -213,29 +219,27 @@ public class ServerInstance {
 	}
 
 	public String getStatus() {
-		String status = "Offline";
-		if (!isRunning())
-			return status;
+		return serverStatus;
+	}
 
-		status = "Starting";
-
-		for (String log : consoleLogs) {
-			if (log != null) {
-				// [11:01:50 INFO]: Done (5.309s)! For help, type "help"
-				if (log.matches("\\[[0-9]{2}:[0-9]{2}:[0-9]{2} INFO]: Done \\([0-9]+(.[0-9]+)?s\\).*") // paper
-						|| log.matches("\\[[0-9]{2}:[0-9]{2}:[0-9]{2} INFO]: Listening on /.*")) { // waterfall
-					status = "Online";
-				} else if (log.equals("<span class=\"fw-bold\">[ezPanel]</span> Received stop command")
-						|| log.equals("<span class=\"fw-bold\">[ezPanel]</span> Received restart command")) {
-					status = "Stopping";
-				} else if (log.equals("<span class=\"fw-bold\">[ezPanel]</span> Starting")
-						|| log.equals("<span class=\"fw-bold\">[ezPanel]</span> Received start command")) {
-					status = "Starting";
-				}
-			}
+	private void updateStatus(String log) {
+		if (!isRunning()) {
+			serverStatus = "Offline";
 		}
 
-		return status;
+		if (log != null) {
+			// [11:01:50 INFO]: Done (5.309s)! For help, type "help"
+			if (log.matches("\\[[0-9]{2}:[0-9]{2}:[0-9]{2} INFO]: Done \\([0-9]+(.[0-9]+)?s\\).*") // paper
+					|| log.matches("\\[[0-9]{2}:[0-9]{2}:[0-9]{2} INFO]: Listening on /.*")) { // waterfall
+				serverStatus = "Online";
+			} else if (log.equals("<span class=\"fw-bold\">[ezPanel]</span> Received stop command")
+					|| log.equals("<span class=\"fw-bold\">[ezPanel]</span> Received restart command")) {
+				serverStatus = "Stopping";
+			} else if (log.equals("<span class=\"fw-bold\">[ezPanel]</span> Starting")
+					|| log.equals("<span class=\"fw-bold\">[ezPanel]</span> Received start command")) {
+				serverStatus = "Starting";
+			}
+		}
 	}
 
 	private void listenOnConsole() {
@@ -252,7 +256,8 @@ public class ServerInstance {
 
 				addLog(line);
 			}
-		} catch (IOException ignored) {
+		} catch (IOException e) {
+			serverStatus = "Offline";
 		}
 	}
 
@@ -263,6 +268,8 @@ public class ServerInstance {
 			shiftArrayLeft();
 			consoleLogs[lineCount - 1] = log;
 		}
+
+		updateStatus(log);
 	}
 
 	private void shiftArrayLeft() {

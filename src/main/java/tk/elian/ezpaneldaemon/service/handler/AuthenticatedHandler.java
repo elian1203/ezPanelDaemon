@@ -1,4 +1,4 @@
-package tk.elian.ezpaneldaemon.object.handler;
+package tk.elian.ezpaneldaemon.service.handler;
 
 import com.sun.net.httpserver.HttpExchange;
 import tk.elian.ezpaneldaemon.object.User;

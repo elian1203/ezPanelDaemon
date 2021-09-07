@@ -1,4 +1,4 @@
-package tk.elian.ezpaneldaemon.object.handler;
+package tk.elian.ezpaneldaemon.service.handler;
 
 import com.google.gson.JsonObject;
 import com.sun.net.httpserver.HttpExchange;
