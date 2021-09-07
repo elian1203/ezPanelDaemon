@@ -135,7 +135,7 @@ public class MySQLDatabase {
 						 ('databaseVersion', '1', true, null, null, 0)
 						,('webServerPort', '12521', true, null, null, 0)
 						,('ftpEnabled', 'true', false, 'FTP Enabled', 'Whether FTP is globally enabled. This overrides server FTP toggles', 10)
-						,('ftpPort', '1337', false, 'FTP Port', 'FTP server port. Must be port forwarded', 20)
+						,('ftpPort', '21', false, 'FTP Port', 'FTP server port. Must be port forwarded', 20)
 						,('pasvPortMin', '10000', false, 'PASV Port Minimum', 'Minimum port for PASV FTP protocol. This must be portforwarded up to the max port below', 30)
 						,('pasvPortMax', '10050', false, 'PASV Port Maximum', 'Maximum port for PASV FTP protocol', 40)
 						,('serverDirectory', '/srv/ezpanel/servers', false, 'Servers Directory', 'Where the Minecraft servers are stored<br>Note: Changing this will not move any existent servers', 50)""");

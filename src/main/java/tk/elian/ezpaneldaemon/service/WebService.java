@@ -151,7 +151,7 @@ public class WebService {
 					}
 
 					String command = getInputLine(httpExchange);
-					minecraft.sendCommand(command);
+					minecraft.sendCommand(command, authenticatedUser.userId());
 					respondAndClose(httpExchange, 200, "");
 				});
 		createAuthenticatedServerContext(server, "/servers/details", (httpExchange, authenticatedUser, minecraft) -> {
@@ -296,11 +296,11 @@ public class WebService {
 			String response = gson.toJson(responseObject);
 			respondAndClose(httpExchange, 200, response);
 		});
-		createAuthenticatedContext(server, "/server/javaVersions", (httpExchange, authenticatedUser) -> {
+		createAuthenticatedContext(server, "/servers/javaVersions", (httpExchange, authenticatedUser) -> {
 			String response = gson.toJson(EzPanelDaemon.getJavaVersions());
 			respondAndClose(httpExchange, 200, response);
 		});
-		createAuthenticatedContext(server, "/server/ftpport", (httpExchange, authenticatedUser) -> {
+		createAuthenticatedContext(server, "/servers/ftpport", (httpExchange, authenticatedUser) -> {
 			boolean enabled = Boolean.parseBoolean(database.getSetting("ftpEnabled"));
 			int port = Integer.parseInt(database.getSetting("ftpPort"));
 

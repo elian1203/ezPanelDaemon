@@ -121,12 +121,11 @@ public class ServerInstance {
 
 			String statement = String.format("%s -Xmx%dM -jar %s nogui", java, maximumMemory, serverJar);
 
-			System.out.println(statement);
 			new Thread(() -> {
 				try {
 					process = Runtime.getRuntime().exec(statement, null, new File(serverPath));
 					new Thread(this::listenOnConsole).start();
-					System.out.println("started on pid " + process.pid());
+					System.out.printf("[START:%d] (PID:%d) (%s)\n", serverId, process.pid(), statement);
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
@@ -148,10 +147,12 @@ public class ServerInstance {
 				sendCommand("stop");
 			}
 			commandOutput = null;
+			System.out.printf("[STOP:%d]\n", serverId);
 		}
 	}
 
 	public void restart() {
+		System.out.printf("[RESTARTING:%d]\n", serverId);
 		stop();
 		new Thread(() -> {
 			while (isRunning()) {
@@ -168,6 +169,7 @@ public class ServerInstance {
 	public void kill() {
 		process.destroy();
 		serverStatus = "Offline";
+		System.out.printf("[KILL:%d]\n", serverId);
 	}
 
 	public String[] getConsoleLogs() {
@@ -185,6 +187,11 @@ public class ServerInstance {
 			commandOutput.flush();
 		} catch (IOException ignored) {
 		}
+	}
+
+	public void sendCommand(String command, int userId) {
+		sendCommand(command);
+		System.out.printf("[COMMAND:%d] (USER:%d) (%s)\n", serverId, userId, command);
 	}
 
 	public double getMemoryUsage() {
