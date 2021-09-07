@@ -219,14 +219,13 @@ public class ServerInstance {
 	}
 
 	public String getStatus() {
-		return serverStatus;
+		if (isRunning())
+			return serverStatus;
+		else
+			return "Offline";
 	}
 
 	private void updateStatus(String log) {
-		if (!isRunning()) {
-			serverStatus = "Offline";
-		}
-
 		if (log != null) {
 			// [11:01:50 INFO]: Done (5.309s)! For help, type "help"
 			if (log.matches("\\[[0-9]{2}:[0-9]{2}:[0-9]{2} INFO]: Done \\([0-9]+(.[0-9]+)?s\\).*") // paper
@@ -256,8 +255,7 @@ public class ServerInstance {
 
 				addLog(line);
 			}
-		} catch (IOException e) {
-			serverStatus = "Offline";
+		} catch (IOException ignored) {
 		}
 	}
 
