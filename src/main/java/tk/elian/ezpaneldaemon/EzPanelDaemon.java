@@ -2,16 +2,23 @@ package tk.elian.ezpaneldaemon;
 
 import sun.misc.Signal;
 import tk.elian.ezpaneldaemon.database.MySQLDatabase;
-import tk.elian.ezpaneldaemon.ftp.MinecraftFtpServer;
 import tk.elian.ezpaneldaemon.object.ServerInstance;
+import tk.elian.ezpaneldaemon.service.FtpService;
+import tk.elian.ezpaneldaemon.service.WebService;
+import tk.elian.ezpaneldaemon.service.TaskService;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
 import java.util.TreeMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class EzPanelDaemon {
 
@@ -26,13 +33,12 @@ public class EzPanelDaemon {
 
 		MySQLDatabase database = connectToDatabase(args);
 
-
-		DaemonWebServer webServer = new DaemonWebServer(database);
+		WebService webServer = new WebService(database);
 		webServer.acceptConnections();
 
 		startAutoStartServers(database);
-
 		startFtpServer(database);
+		ScheduledExecutorService taskService = startTaskService(database);
 
 		new Thread(() -> {
 			Scanner scanner = new Scanner(System.in);
@@ -40,7 +46,7 @@ public class EzPanelDaemon {
 				try {
 					String input = scanner.nextLine();
 					if (input.equalsIgnoreCase("stop")) {
-						handleShutDown(webServer, database);
+						handleShutDown(webServer, database, taskService);
 						break;
 					}
 				} catch (Exception ignored) {
@@ -48,7 +54,7 @@ public class EzPanelDaemon {
 			}
 		}).start();
 
-		Signal.handle(new Signal("INT"), signal -> handleShutDown(webServer, database));
+		Signal.handle(new Signal("INT"), signal -> handleShutDown(webServer, database, taskService));
 	}
 
 	private static MySQLDatabase connectToDatabase(String[] args) {
@@ -75,17 +81,33 @@ public class EzPanelDaemon {
 		int pasvMaxPort = Integer.parseInt(database.getSetting("pasvPortMax"));
 
 		if (enabled) {
-			MinecraftFtpServer.startFtpServer(port, database, pasvMinPort, pasvMaxPort, false, null);
+			FtpService.startFtpServer(port, database, pasvMinPort, pasvMaxPort, false, null);
 		}
 	}
 
-	private static void handleShutDown(DaemonWebServer webServer, MySQLDatabase database) {
+	private static ScheduledExecutorService startTaskService(MySQLDatabase database) {
+		ScheduledExecutorService service = Executors.newSingleThreadScheduledExecutor();
+
+		LocalDateTime now = LocalDateTime.now();
+
+		long secondsDelay = Math.abs(Duration.between(now.withSecond(0).plusMinutes(1), now).getSeconds());
+
+		service.scheduleAtFixedRate(new TaskService(database), secondsDelay, 60, TimeUnit.SECONDS);
+		return service;
+	}
+
+	private static void handleShutDown(WebService webServer, MySQLDatabase database,
+	                                   ScheduledExecutorService taskService) {
 		try {
 			System.out.println("Shutting down...");
 
 			webServer.denyConnections();
-			MinecraftFtpServer.stopFtpServer();
+			FtpService.stopFtpServer();
 			database.getServers().stream().filter(ServerInstance::isRunning).forEach(ServerInstance::stop);
+
+			if (taskService != null && !taskService.isShutdown()) {
+				taskService.shutdownNow();
+			}
 
 			Thread.sleep(10000);
 			System.exit(0);

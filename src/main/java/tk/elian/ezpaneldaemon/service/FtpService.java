@@ -1,4 +1,4 @@
-package tk.elian.ezpaneldaemon.ftp;
+package tk.elian.ezpaneldaemon.service;
 
 import com.google.gson.JsonObject;
 import com.guichaguri.minimalftp.FTPConnection;
@@ -16,7 +16,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 
-public class MinecraftFtpServer {
+public class FtpService {
 
 	private static FTPServer ftpServer;
 

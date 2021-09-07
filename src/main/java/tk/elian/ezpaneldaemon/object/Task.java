@@ -1,4 +1,5 @@
 package tk.elian.ezpaneldaemon.object;
 
-public record Task(int taskId, int serverId, String command, String days, String time) {
+public record Task(int taskId, int serverId, String command, String days, String time, String repeatIncrement,
+                   String lastRun) {
 }

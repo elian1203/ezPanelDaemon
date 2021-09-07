@@ -332,6 +332,7 @@ public class ServerInstance {
 
 			String jar = project + "-" + version + "-" + build + ".jar";
 			database.setServerJar(getServerId(), jar);
+			setDatabaseDetails(database.getServerDetailsById(serverId));
 
 			createServerFiles();
 		} catch (IOException e) {

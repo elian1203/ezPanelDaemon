@@ -1,11 +1,13 @@
-package tk.elian.ezpaneldaemon;
+package tk.elian.ezpaneldaemon.service;
 
 import com.google.gson.*;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.codehaus.plexus.util.Base64;
+import tk.elian.ezpaneldaemon.EzPanelDaemon;
 import tk.elian.ezpaneldaemon.database.MySQLDatabase;
 import tk.elian.ezpaneldaemon.gson.ServerInstanceJsonMapper;
+import tk.elian.ezpaneldaemon.gson.TaskJsonMapper;
 import tk.elian.ezpaneldaemon.object.ServerInstance;
 import tk.elian.ezpaneldaemon.object.Setting;
 import tk.elian.ezpaneldaemon.object.Task;
@@ -23,16 +25,19 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Scanner;
 
-public class DaemonWebServer {
+public class WebService {
 
 	private final Gson gson;
 
 	private final MySQLDatabase database;
 	private HttpServer server;
 
-	public DaemonWebServer(MySQLDatabase database) {
+	public WebService(MySQLDatabase database) {
 		this.gson =
-				new GsonBuilder().registerTypeAdapter(ServerInstance.class, new ServerInstanceJsonMapper()).create();
+				new GsonBuilder()
+						.registerTypeAdapter(ServerInstance.class, new ServerInstanceJsonMapper())
+						.registerTypeAdapter(Task.class, new TaskJsonMapper())
+						.create();
 		this.database = database;
 	}
 
@@ -381,6 +386,7 @@ public class DaemonWebServer {
 				String jarPathRelativeTo = json.get("jarPathRelativeTo").getAsString();
 				int maximumMemory = json.get("maximumMemory").getAsInt();
 				boolean autoStart = json.get("autoStart").getAsBoolean();
+				boolean ftp = json.get("ftp").getAsBoolean();
 				int ownerId = json.has("owner") ? json.get("owner").getAsInt() : -1;
 
 				String[] oldJarSplit = minecraft.getServerJar().split("-");
@@ -393,7 +399,7 @@ public class DaemonWebServer {
 				}
 
 				database.updateServer(minecraft.getServerId(), name, javaPath, serverJar, jarPathRelativeTo,
-						maximumMemory, autoStart, ownerId);
+						maximumMemory, autoStart, ftp, ownerId);
 				minecraft.setDatabaseDetails(database.getServerDetailsById(minecraft.getServerId()));
 
 				responseAndClose(httpExchange, "");
@@ -737,7 +743,21 @@ public class DaemonWebServer {
 			}
 
 			JsonObject obj = JsonParser.parseString(getInputLine(httpExchange)).getAsJsonObject();
-			obj.entrySet().forEach(e -> database.updateSetting(e.getKey(), e.getValue().getAsString()));
+			obj.entrySet().forEach(e -> {
+				// start/stop ftp server if setting changed
+				if (e.getKey().equals("ftpEnabled")) {
+					boolean currentSetting = Boolean.parseBoolean(database.getSetting("ftpEnabled"));
+					if (e.getValue().getAsBoolean() && !currentSetting) {
+						EzPanelDaemon.startFtpServer(database);
+					} else if (!e.getValue().getAsBoolean() && currentSetting) {
+						FtpService.stopFtpServer();
+					}
+				}
+
+				database.updateSetting(e.getKey(), e.getValue().getAsString());
+			});
+
+			responseAndClose(httpExchange, "");
 		});
 		server.createContext("/settings/tasks", httpExchange -> {
 			if (!authVerify(httpExchange)) {
@@ -766,7 +786,7 @@ public class DaemonWebServer {
 			String response = gson.toJson(tasks);
 			responseAndClose(httpExchange, response);
 		});
-		server.createContext("/settings/tasks/add", httpExchange -> {
+		server.createContext("/settings/tasks/create", httpExchange -> {
 			if (!authVerify(httpExchange)) {
 				httpExchange.sendResponseHeaders(401, 0);
 				httpExchange.close();
@@ -780,6 +800,7 @@ public class DaemonWebServer {
 				String command = obj.get("command").getAsString();
 				String days = obj.get("days").getAsString();
 				String time = obj.get("time").getAsString();
+				String repeat = obj.get("repeat").getAsString();
 
 				User user = getAuthenticatedUser(httpExchange);
 				ServerInstance minecraft = database.getServer(serverId);
@@ -796,7 +817,7 @@ public class DaemonWebServer {
 					return;
 				}
 
-				database.addTask(serverId, command, days, time);
+				database.addTask(serverId, command, days, time, repeat);
 
 				responseAndClose(httpExchange, "");
 			} catch (Exception e) {
@@ -819,6 +840,7 @@ public class DaemonWebServer {
 				String command = obj.get("command").getAsString();
 				String days = obj.get("days").getAsString();
 				String time = obj.get("time").getAsString();
+				String repeat = obj.get("repeat").getAsString();
 
 				User user = getAuthenticatedUser(httpExchange);
 
@@ -837,7 +859,7 @@ public class DaemonWebServer {
 					return;
 				}
 
-				database.updateTask(taskId, command, days, time);
+				database.updateTask(taskId, command, days, time, repeat);
 
 				responseAndClose(httpExchange, "");
 			} catch (Exception e) {

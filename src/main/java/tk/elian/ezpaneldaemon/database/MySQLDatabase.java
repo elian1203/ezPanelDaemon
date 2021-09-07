@@ -137,7 +137,7 @@ public class MySQLDatabase {
 						,('ftpPort', '1337', false, 'FTP Port', 'FTP server port. Must be port forwarded', 20)
 						,('pasvPortMin', '10000', false, 'PASV Port Minimum', 'Minimum port for PASV FTP protocol. This must be portforwarded up to the max port below', 30)
 						,('pasvPortMax', '10050', false, 'PASV Port Maximum', 'Maximum port for PASV FTP protocol', 40)
-						,('serverDirectory', '/srv/ezpanel/servers', false, 'Servers Directory', 'Where the Minecraft servers are stored', 50)""");
+						,('serverDirectory', '/srv/ezpanel/servers', false, 'Servers Directory', 'Where the Minecraft servers are stored<br>Note: Changing this will not move any existent servers', 50)""");
 		}
 
 		if (!tasksExists) {
@@ -147,7 +147,9 @@ public class MySQLDatabase {
 					    serverId int,
 					    command varchar(1000),
 					    days varchar(7),
-					    time varchar(10)
+					    time varchar(10),
+					    repeatIncrement varchar(10),
+					    lastRun varchar(20)
 					);""");
 		}
 	}
@@ -280,7 +282,7 @@ public class MySQLDatabase {
 	}
 
 	public void updateServer(int serverId, String name, String javaPath, String serverJar, String jarPathRelativeTo,
-	                         int maximumMemory, boolean autoStart, int ownerId) {
+	                         int maximumMemory, boolean autoStart, boolean ftp, int ownerId) {
 		try (Connection con = getConnection()) {
 			Statement statement = con.createStatement();
 
@@ -293,10 +295,11 @@ public class MySQLDatabase {
 							    jarPathRelativeTo = '%s',
 							    maximumMemory = %d,
 							    autoStart = %b,
+							    ftp = %b,
 							    ownerId = %d
 							WHERE
 							    serverId = %d""",
-					name, javaPath, serverJar, jarPathRelativeTo, maximumMemory, autoStart, ownerId, serverId);
+					name, javaPath, serverJar, jarPathRelativeTo, maximumMemory, autoStart, ftp, ownerId, serverId);
 			statement.execute(sql);
 		} catch (SQLException e) {
 			e.printStackTrace();
@@ -485,6 +488,31 @@ public class MySQLDatabase {
 		}
 	}
 
+	public List<Task> getTasks() {
+		List<Task> tasks = new ArrayList<>();
+
+		try (Connection con = getConnection()) {
+			String sql = "SELECT * FROM Tasks";
+			ResultSet rs = con.createStatement().executeQuery(sql);
+
+			while (rs.next()) {
+				int taskId = rs.getInt("taskId");
+				int serverId = rs.getInt("serverId");
+				String command = rs.getString("command");
+				String days = rs.getString("days");
+				String time = rs.getString("time");
+				String repeat = rs.getString("repeatIncrement");
+				String lastRun = rs.getString("lastRun");
+
+				tasks.add(new Task(taskId, serverId, command, days, time, repeat, lastRun));
+			}
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+
+		return tasks;
+	}
+
 	public Task getTaskById(int taskId) {
 		try (Connection con = getConnection()) {
 			String sql = "SELECT * FROM Tasks where taskId = " + taskId;
@@ -495,8 +523,10 @@ public class MySQLDatabase {
 				String command = rs.getString("command");
 				String days = rs.getString("days");
 				String time = rs.getString("time");
+				String repeat = rs.getString("repeatIncrement");
+				String lastRun = rs.getString("lastRun");
 
-				return new Task(taskId, serverId, command, days, time);
+				return new Task(taskId, serverId, command, days, time, repeat, lastRun);
 			}
 		} catch (SQLException e) {
 			e.printStackTrace();
@@ -517,8 +547,10 @@ public class MySQLDatabase {
 				String command = rs.getString("command");
 				String days = rs.getString("days");
 				String time = rs.getString("time");
+				String repeat = rs.getString("repeatIncrement");
+				String lastRun = rs.getString("lastRun");
 
-				tasks.add(new Task(taskId, serverId, command, days, time));
+				tasks.add(new Task(taskId, serverId, command, days, time, repeat, lastRun));
 			}
 		} catch (SQLException e) {
 			e.printStackTrace();
@@ -527,32 +559,35 @@ public class MySQLDatabase {
 		return tasks;
 	}
 
-	public void addTask(int serverId, String command, String days, String time) {
+	public void addTask(int serverId, String command, String days, String time, String repeat) {
 		try (Connection con = getConnection()) {
 			String sql = String.format("""
 					INSERT INTO Tasks
-					(serverId, command, days, time)
-					VALUES
+					(serverId, command, days, time, repeatIncrement)
+					VALUES (
 					    %d,
 					    '%s',
 					    '%s',
-					    '%s'""", serverId, command, days, time);
+					    '%s',
+					    '%s'
+					);""", serverId, command, days, time, repeat);
 			con.createStatement().execute(sql);
 		} catch (SQLException e) {
 			e.printStackTrace();
 		}
 	}
 
-	public void updateTask(int taskId, String command, String days, String time) {
+	public void updateTask(int taskId, String command, String days, String time, String repeat) {
 		try (Connection con = getConnection()) {
 			String sql = String.format("""
 					UPDATE Tasks
 					SET
 					    command = '%s',
 					    days = '%s',
-					    time = '%s'
+					    time = '%s',
+					    repeat '%s'
 					WHERE
-						taskId = %d""", command, days, time, taskId);
+						taskId = %d""", command, days, time, repeat, taskId);
 			con.createStatement().execute(sql);
 		} catch (SQLException e) {
 			e.printStackTrace();
@@ -562,6 +597,19 @@ public class MySQLDatabase {
 	public void deleteTask(int taskId) {
 		try (Connection con = getConnection()) {
 			String sql = "DELETE FROM Tasks WHERE taskId = " + taskId;
+			con.createStatement().execute(sql);
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public void setTaskLastRun(int taskId, String lastRun) {
+		try (Connection con = getConnection()) {
+			String sql = String.format("""
+					UPDATE Tasks
+					SET lastRun = '%s'
+					WHERE taskId = %d
+					""", lastRun, taskId);
 			con.createStatement().execute(sql);
 		} catch (SQLException e) {
 			e.printStackTrace();
