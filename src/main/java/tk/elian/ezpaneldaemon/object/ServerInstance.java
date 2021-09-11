@@ -235,6 +235,7 @@ public class ServerInstance {
 	private void updateStatus(String log) {
 		if (log != null) {
 			// [11:01:50 INFO]: Done (5.309s)! For help, type "help"
+			// [10:36:15] [Server thread/INFO] [minecraft/DedicatedServer]: Done (7.278s)! For help, type "help"
 			if (log.matches("\\[[0-9]{2}:[0-9]{2}:[0-9]{2} INFO]: Done \\([0-9]+(.[0-9]+)?s\\).*") // paper
 					|| log.matches("\\[[0-9]{2}:[0-9]{2}:[0-9]{2} INFO]: Listening on /.*")) { // waterfall
 				serverStatus = "Online";
@@ -244,6 +245,9 @@ public class ServerInstance {
 			} else if (log.equals("<span class=\"fw-bold\">[ezPanel]</span> Starting")
 					|| log.equals("<span class=\"fw-bold\">[ezPanel]</span> Received start command")) {
 				serverStatus = "Starting";
+			} else if (log.matches("\\[[0-9]{2}:[0-9]{2}:[0-9]{2}] \\[Server thread\\/INFO] " +
+					"\\[minecraft\\/DedicatedServer]: Done \\([0-9]+(.[0-9]+)?s\\).*")) {
+				serverStatus = "Online";
 			}
 		}
 	}
